@@ -43,8 +43,8 @@ class VAE(nn.Module):
         mu, var = torch.split(encoder_output, [self.dx, self.dx], -1)
 
         "generate samples from encoder output"
-        x_samples = mu + torch.randn(mu.shape) * torch.sqrt(var)
+        x_samples = mu + torch.randn(mu.shape) * torch.sqrt(torch.exp(var))
 
         decoder_prob = torch.sigmoid(self.decoder(x_samples))
 
-        return mu, var, x_samples, decoder_prob
+        return mu, torch.exp(var), x_samples, decoder_prob
