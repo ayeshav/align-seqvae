@@ -3,6 +3,8 @@ import torch.nn as nn
 from torch.distributions import Normal, Bernoulli
 
 
+Softplus = torch.nn.Softplus()
+
 class Encoder(nn.Module):
     def __init__(self, dx, w, h):
         super().__init__()
@@ -41,10 +43,13 @@ class VAE(nn.Module):
 
         encoder_output = self.encoder(y)
         mu, var = torch.split(encoder_output, [self.dx, self.dx], -1)
+        # torch.clamp(var, 1e-3)
+
+        logvar = Softplus(var) + 1e-6
 
         "generate samples from encoder output"
-        x_samples = mu + torch.randn(mu.shape) * torch.sqrt(torch.exp(var))
+        x_samples = mu + torch.randn(mu.shape) * torch.sqrt(logvar)
 
         decoder_prob = torch.sigmoid(self.decoder(x_samples))
 
-        return mu, torch.exp(var), x_samples, decoder_prob
+        return mu, logvar, x_samples, decoder_prob
