@@ -10,7 +10,6 @@ from torch.utils.data import Dataset
 def compute_elbo(vae, prior, y):
 
     ll, kl = vae(y, prior)
-
     elbo = torch.mean(ll - kl)
 
     return -elbo
@@ -29,6 +28,31 @@ def vae_training(vae, prior, epochs, data):
             with torch.no_grad():
                 print(loss.item())
     return vae, prior
+
+
+def obs_alignment(ref_res, prior, y, y_ref, lstq):
+    """
+    should return an alignment function (can be linear) that takes in y_new
+    """
+    T, N, dy = y.shape
+    dy_ref = y_ref.shape[2]
+
+    if dy != dy_ref:
+        rp_mat = np.random.randn(dy, dy_ref)*(1/dy_ref)
+
+    if lstq:
+
+        y_cat, y_ref_cat = y.reshape(-1, dy)@rp_mat, y_ref.reshape(-1, dy_ref)
+
+        y_cat = (y_cat - y_cat.mean(0))/np.linalg.norm(y_cat)
+        y_ref_cat = (y_ref_cat - y_ref_cat.mean(0))/np.linalg.norm(y_ref_cat)
+
+        u, s, vh = np.linalg.svd(y_ref_cat.T.dot(y_cat).T)
+
+        A = u.dot(vh)
+        y_cat_tfm = np.dot(y_cat, A.T) * np.sum(s)
+
+        return (y_cat_tfm@np.linalg.pinv(rp_mat)).reshape(T, N, dy)
 
 
 class DataSetTs(Dataset):
