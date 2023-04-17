@@ -6,10 +6,12 @@ Softplus = torch.nn.Softplus()
 
 
 class Prior(nn.Module):
-    def __init__(self, dx):
+    def __init__(self, dx, residual=True):
         super().__init__()
 
         self.dx = dx
+        self.residual = residual
+
         self.prior = nn.Sequential(nn.Linear(dx, 256),
                                    nn.ReLU(),
                                    nn.Linear(256, 256),
@@ -20,6 +22,9 @@ class Prior(nn.Module):
         out = self.prior(x)
         mu, logvar = torch.split(out, [self.dx, self.dx], -1)
         var = Softplus(logvar) + 1e-6
+
+        if self.residual:
+            mu = mu+x
 
         return mu, var
 
@@ -72,7 +77,7 @@ class SeqVae(nn.Module):
         "generate samples from encoder output"
         x_samples = mu + torch.randn(mu.shape) * torch.sqrt(logvar)
 
-        log_q = torch.sum(torch.sum(Normal(mu, logvar).log_prob(x_samples), -1), 0)
+        log_q = torch.sum(torch.sum(Normal(mu, torch.sqrt(logvar)).log_prob(x_samples), -1), 0)
 
         return x_samples, log_q
 
@@ -80,7 +85,7 @@ class SeqVae(nn.Module):
         mu_y = self.decoder(x_samples)
         var_y = Softplus(self.obs_var) + 1e-6
 
-        ll = torch.sum(torch.sum(Normal(mu_y, var_y).log_prob(y), -1), 0)
+        ll = torch.sum(torch.sum(Normal(mu_y, torch.sqrt(var_y)).log_prob(y), -1), 0)
 
         return ll
 
@@ -89,7 +94,7 @@ class SeqVae(nn.Module):
         log_prior = torch.sum(Normal(0, 1).log_prob(x_samples[0]), -1)
 
         mu, var = prior(x_samples[:-1])
-        log_prior = log_prior + torch.sum(torch.sum(Normal(mu, var).log_prob(x_samples[1:]),-1), 0)
+        log_prior = log_prior + torch.sum(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_samples[1:]),-1), 0)
 
         return log_q - log_prior
 
