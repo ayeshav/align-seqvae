@@ -47,12 +47,18 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq):
         y_cat = (y_cat - y_cat.mean(0))/np.linalg.norm(y_cat)
         y_ref_cat = (y_ref_cat - y_ref_cat.mean(0))/np.linalg.norm(y_ref_cat)
 
-        u, s, vh = np.linalg.svd(y_ref_cat.T.dot(y_cat).T)
+        u, s, vh = np.linalg.svd((y_ref_cat.T@y_cat).T)
 
         A = u.dot(vh)
-        y_cat_tfm = np.dot(y_cat, A.T) * np.sum(s)
+        y_cat_tfm = (y_cat @ A.T) * np.sum(s)
 
         return (y_cat_tfm@np.linalg.pinv(rp_mat)).reshape(T, N, dy)
+
+    else:
+
+        "after random projection, it can be passed through the regular vae"
+
+
 
 
 class DataSetTs(Dataset):
