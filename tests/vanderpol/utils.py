@@ -17,7 +17,8 @@ def compute_elbo(vae, prior, y):
 
 def vae_training(vae, prior, epochs, data):
 
-    opt = torch.optim.Adam(params=list(prior.parameters()) + list(vae.parameters()))
+    opt = torch.optim.Adam(params=list(prior.parameters()) + list(vae.parameters()), lr=1e-2)
+    losses = []
     for _ in range(epochs):
         for x, y in data:
             opt.zero_grad()
@@ -27,7 +28,8 @@ def vae_training(vae, prior, epochs, data):
 
             with torch.no_grad():
                 print(loss.item())
-    return vae, prior
+                losses.append(loss.item())
+    return vae, prior, losses
 
 
 def get_predictions(y_aligned, ref_vae, prior):
@@ -69,7 +71,7 @@ def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
     y_tfm_recon = likelihood_params[0]
 
     "now invert it back to original space"
-    y_tfm_recon_original = (y_tfm_recon@np.linalg.pinv(linear_map))@np.linalg.pinv(rp_mat)
+    y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
 
     mse = torch.mean((y - y_tfm_recon_original)**2)
 
@@ -84,7 +86,7 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
     dy_ref = y_ref.shape[2]
 
     if dy != dy_ref:
-        rp_mat = np.random.randn(dy, dy_ref)*(1/dy_ref)
+        rp_mat = torch.randn(dy, dy_ref)*(1/dy_ref)
 
     if lstq:
 
@@ -100,10 +102,11 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
 
         # TODO: Figure out how to avoid doing the pinv
 
-        return (y_cat_tfm@np.linalg.pinv(rp_mat)).reshape(T, N, dy)
+        return A.T * np.sum(s), rp_mat
 
     else:
         linear_map = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat)
+        return linear_map, rp_mat
 
 
 class DataSetTs(Dataset):

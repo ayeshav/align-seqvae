@@ -69,7 +69,7 @@ class SeqVae(nn.Module):
         self.encoder = Encoder(dy, dx, dh_e)
         self.decoder = Decoder(dx, dy)
 
-        self.obs_var = nn.Parameter(torch.ones(1, dy))
+        self.obs_var = nn.Parameter(torch.ones(1, dy), requires_grad=True)
 
     def sample(self, y):
         mu, logvar = self.encoder(y)
