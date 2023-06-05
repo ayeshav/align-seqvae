@@ -93,24 +93,23 @@ class SeqVae(nn.Module):
 
         return likelihood_params
 
-    def _kl(self, x_samples, log_q, prior):
+    def _prior(self, x_samples, prior):
 
         log_prior = torch.sum(Normal(0, 1).log_prob(x_samples[0]), -1)
 
         mu, var = prior(x_samples[:-1])
         log_prior = log_prior + torch.sum(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_samples[1:]),-1), 0)
 
-        return log_q - log_prior
+        return log_prior
 
     def forward(self, y, prior):
 
         encoder_params = self.sample(y)
 
         likelihood_params = self._likelihood(y, encoder_params[2])
-        kl = self._kl(encoder_params[2], encoder_params[3], prior)
+        log_prior = self._prior(encoder_params[2], prior)
 
-        return encoder_params, likelihood_params, kl
-
+        return encoder_params, likelihood_params, log_prior
 
 
 
