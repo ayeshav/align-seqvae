@@ -40,7 +40,8 @@ def reuse_dynamics(reference, lstq, epochs=20):
     vae, prior, _ = torch.load(reference)
 
     # for i in range(1, len(data)):
-    res_alignment = obs_alignment(vae, prior, data[1]['y'].float(), data[0]['y'].float(), lstq, epochs=epochs)
+    res_alignment = obs_alignment(vae, prior, data[1]['y'].float(), data[0]['y'].float(), lstq, epochs=epochs,
+                                  update_prior=False)
 
     return res_alignment
 
@@ -52,7 +53,7 @@ def main():
     if not os.path.isfile('reference_model.pt'):
         train_ref_vae()
 
-    res_alignment = reuse_dynamics('reference_model.pt', False, 80)
+    res_alignment = reuse_dynamics('reference_model.pt', False, 50)
 
     torch.save(res_alignment, 'result.pt')
 

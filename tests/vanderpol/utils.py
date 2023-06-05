@@ -44,13 +44,14 @@ def vae_training(vae, prior, epochs, data):
 #     y_recon = likelihood_params[0]
 
 
-def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
+def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
     prior: pre-trained prior
     linear_map: linear alignment matrix of size dy x dy_ref
     y: new dataset to be aligned of shape K x T x dy
+    update_prior: True or False depending on whether prior params are trained
     """
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
@@ -68,10 +69,13 @@ def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
 
     mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
 
-    return mse - torch.mean(log_prior)
+    if update_prior:
+        return mse - torch.mean(log_prior)
+    else:
+        return mse
 
 
-def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
+def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat, update_prior):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -80,13 +84,17 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
     linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
 
     # data = SeqDataLoader((y,), batch_size=100)
+    if update_prior:
+        param_list = [linear_map]+list(prior.parameters())
+    else:
+        param_list = [linear_map]
 
-    opt = torch.optim.Adam(params=[linear_map]+list(prior.parameters()), lr=1e-2)
+    opt = torch.optim.Adam(params=param_list, lr=1e-2)
     for _ in range(epochs):
 
         # for y_b,  in data:
         opt.zero_grad()
-        loss = compute_map_mse(ref_vae, prior, linear_map, y, rp_mat)
+        loss = compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat)
         loss.backward()
         opt.step()
 
@@ -96,7 +104,7 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
     return linear_map, prior
 
 
-def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
+def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
     """
     ref_res: reference vae trained on y_ref
     prior: trained prior on y_ref
@@ -118,7 +126,7 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
         return torch.linalg.lstsq(y_cat, y_ref_cat)
 
     else:
-        linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat)
+        linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
         return linear_map, rp_mat, prior
 
 # Utils for data
