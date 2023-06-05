@@ -9,7 +9,9 @@ from torch.utils.data import Dataset
 
 def compute_elbo(vae, prior, y):
 
-    _, ll_params, kl = vae(y, prior)
+    enc_params, ll_params, log_prior = vae(y, prior)
+    kl = enc_params[3] - log_prior
+
     elbo = torch.mean(ll_params[2] - kl)
 
     return -elbo
@@ -44,11 +46,16 @@ def get_predictions(y_aligned, ref_vae, prior):
 
 def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
 
-    dy = y_ref.shape[2]
-    linear_map = nn.Parameter(torch.ones(dy, dy), requires_grad=True)
+    dy = y.shape[2]
+    dy_ref = y_ref.shape[2]
+    linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
 
-    opt = torch.optim.Adam(params=linear_map)
+    # data = SeqDataLoader((y,), batch_size=100)
+
+    opt = torch.optim.Adam(params=[linear_map]+list(prior.parameters()), lr=1e-2)
     for _ in range(epochs):
+
+        # for y_b,  in data:
         opt.zero_grad()
         loss = compute_map_mse(ref_vae, prior, linear_map, y, rp_mat)
         loss.backward()
@@ -57,25 +64,27 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
         with torch.no_grad():
             print(loss.item())
 
-    return linear_map
+    return linear_map, prior
 
 
 def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
 
-    y_tfm = y@rp_mat@linear_map
+    dy, dy_ref = linear_map.shape
+    y_tfm = y@linear_map
 
-    encoder_params, likelihood_params, _ = ref_vae(y_tfm, prior)
+    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)
 
     y_tfm_recon = likelihood_params[0]
 
     "now invert it back to original space"
-    y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
+    # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
+    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1,dy_ref).T)[0]
 
-    mse = torch.mean((y - y_tfm_recon_original)**2)
+    mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
 
-    return mse
+    return mse - torch.mean(log_prior)
 
 
 def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
@@ -86,28 +95,17 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
     dy_ref = y_ref.shape[2]
 
     if dy != dy_ref:
-        rp_mat = torch.randn(dy, dy_ref)*(1/dy_ref)
+        rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
 
     if lstq:
 
-        y_cat, y_ref_cat = y.reshape(-1, dy)@rp_mat, y_ref.reshape(-1, dy_ref)
+        y_cat, y_ref_cat = y.reshape(-1, dy), y_ref.reshape(-1, dy_ref)
 
-        y_cat = (y_cat - y_cat.mean(0))/np.linalg.norm(y_cat)
-        y_ref_cat = (y_ref_cat - y_ref_cat.mean(0))/np.linalg.norm(y_ref_cat)
-
-        u, s, vh = np.linalg.svd((y_ref_cat.T@y_cat).T)
-
-        A = u.dot(vh)
-        y_cat_tfm = (y_cat @ A.T) * np.sum(s)
-
-        # TODO: Figure out how to avoid doing the pinv
-
-        return A.T * np.sum(s), rp_mat
+        return torch.linalg.lstsq(y_cat, y_ref_cat)
 
     else:
-        linear_map = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat)
-        return linear_map, rp_mat
-
+        linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat)
+        return linear_map, rp_mat, prior
 
 
 class SeqDataLoader:
