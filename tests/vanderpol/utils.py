@@ -34,18 +34,47 @@ def vae_training(vae, prior, epochs, data):
     return vae, prior, losses
 
 
-def get_predictions(y_aligned, ref_vae, prior):
+# def get_predictions(y_aligned, ref_vae, prior):
+#     assert isinstance(prior, Prior)
+#     assert isinstance(ref_vae, SeqVae)
+#
+#     encoder_params, likelihood_params, _ = ref_vae(y_aligned, prior)
+#
+#     x_samples = encoder_params[2]
+#     y_recon = likelihood_params[0]
+
+
+def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
+    """
+    loss for alignment between datasets
+    ref_vae: pre-trained vae
+    prior: pre-trained prior
+    linear_map: linear alignment matrix of size dy x dy_ref
+    y: new dataset to be aligned of shape K x T x dy
+    """
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
 
-    encoder_params, likelihood_params, _ = ref_vae(y_aligned, prior)
+    dy, dy_ref = linear_map.shape
+    y_tfm = y@linear_map
 
-    x_samples = encoder_params[2]
-    y_recon = likelihood_params[0]
+    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)
+
+    y_tfm_recon = likelihood_params[0]
+
+    "now invert it back to original space"
+    # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
+    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1,dy_ref).T)[0]
+
+    mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
+
+    return mse - torch.mean(log_prior)
 
 
 def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
-
+    """
+    training function for learning linear alignment and updating prior params
+    """
     dy = y.shape[2]
     dy_ref = y_ref.shape[2]
     linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
@@ -67,29 +96,14 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
     return linear_map, prior
 
 
-def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
-    assert isinstance(prior, Prior)
-    assert isinstance(ref_vae, SeqVae)
-
-    dy, dy_ref = linear_map.shape
-    y_tfm = y@linear_map
-
-    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)
-
-    y_tfm_recon = likelihood_params[0]
-
-    "now invert it back to original space"
-    # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
-    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1,dy_ref).T)[0]
-
-    mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
-
-    return mse - torch.mean(log_prior)
-
-
 def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
     """
-    should return an alignment function (can be linear) that takes in y_new
+    ref_res: reference vae trained on y_ref
+    prior: trained prior on y_ref
+    y: new data to be aligned of shape K x T x dy
+    y_ref: reference dataset of shape K x T x dy_ref
+
+    returns linear map, rp_mat and trained prior
     """
     T, N, dy = y.shape
     dy_ref = y_ref.shape[2]
@@ -106,6 +120,8 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
     else:
         linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat)
         return linear_map, rp_mat, prior
+
+# Utils for data
 
 
 class SeqDataLoader:
@@ -162,9 +178,9 @@ class DataSetTs(Dataset):
         return self.len
 
 
-class Mlp(nn.Module):
-    def __init__(self, dx, dy):
-        self.linear = nn.Sequential(nn.Linear(dx,dy))
-
-    def forward(self, x):
-        return self.linear(x)
+# class Mlp(nn.Module):
+#     def __init__(self, dx, dy):
+#         self.linear = nn.Sequential(nn.Linear(dx,dy))
+#
+#     def forward(self, x):
+#         return self.linear(x)
