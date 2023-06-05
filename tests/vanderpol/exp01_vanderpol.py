@@ -1,4 +1,4 @@
-import argparse
+import os
 
 import torch
 import torch.nn.functional as F
@@ -21,45 +21,40 @@ data = torch.load('vanderpol.pt')
 
 def train_ref_vae():
     "extract reference data"
-    x, y = data['0']
+    x, y = data[0]['x'], data[0]['y']
     x_train, y_train = x[:, :n_train, :], y[:, :n_train, :]
 
-    data_ref = DataLoader(DataSetTs(x_train.float(), y_train.float()), batch_size=100)
+    data_ref = SeqDataLoader((x_train.float(), y_train.float()), batch_size=100)
 
     dy_ref = y.shape[2]
 
     prior = Prior(dx)
     vae = SeqVae(dx, dy_ref, dh)
-    res = vae_training(vae, prior, 100, data_ref)
+    res = vae_training(vae, prior, 300, data_ref)
 
     torch.save(res, 'reference_model.pt')
 
 
 def reuse_dynamics(reference, lstq):
 
-    vae, prior = torch.load(reference)
+    vae, prior, _ = torch.load(reference)
 
-    for i in range(1, len(data)):
-        res_alignment = obs_alignment(vae, prior, data[str(i)][1], data['0'][1], lstq)
+    # for i in range(1, len(data)):
+    res_alignment = obs_alignment(vae, prior, data[1]['y'].float(), data[0]['y'].float(), lstq)
+
+    return res_alignment
+
+    # out = obs_alignment(vae, res_alignment[2], data[str(i)][1].float(), data['0'][1].float(), lstq)
 
 
 def main():
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('-p', '--train_prior', help='1 to specify if the vae needs to be trained from scratch')
-    # parser.add_argument('-l', '--lstq', type=int, help='1 if lstq can be used for alignment')
-    # parser.add_argument('f', '--path', default='empty', type=str, help='if train_prior is set to 0, provide path of '
-    #                                                                     'trained model')
-    #
-    # args = parser.parse_args()
 
-    # if args.train_prior == 1:
-    #
-    #     fname = 'reference_model.pt'
-    # else:
-    #     fname = args.path
-    #
-    # train_ref_vae()
-    reuse_dynamics('reference_model.pt', True)
+    if not os.path.isfile('reference_model.pt'):
+        train_ref_vae()
+
+    res_alignment = reuse_dynamics('reference_model.pt', False)
+
+    torch.save(res_alignment, 'result.pt')
 
 
 if __name__ == '__main__':
