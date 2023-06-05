@@ -109,6 +109,47 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20):
         return linear_map, rp_mat
 
 
+
+class SeqDataLoader:
+    def __init__(self, data_tuple, batch_size, shuffle=False):
+        """
+        Constructor for fast data loader
+        :param data_tuple: a tuple of matrices of size T x K x dy
+        :param batch_size: batch size
+        """
+        self.shuffle = shuffle
+        self.data_tuple = data_tuple
+        self.batch_size = batch_size
+        self.dataset_len = self.data_tuple[0].shape[1]
+
+        # Calculate # batches
+        n_batches, remainder = divmod(self.dataset_len, self.batch_size)
+        if remainder > 0:
+            n_batches += 1
+        self.n_batches = n_batches
+
+    def __iter__(self):
+        if self.shuffle:
+            r = torch.randperm(self.dataset_len)
+        else:
+            r = torch.arange(self.dataset_len)
+
+        self.indices = [r[j * self.batch_size: (j * self.batch_size) + self.batch_size] for j in range(self.n_batches)]
+        self.i = 0
+        return self
+
+    def __next__(self):
+        if self.i >= self.n_batches:
+            raise StopIteration
+        idx = self.indices[self.i]
+        batch = tuple([self.data_tuple[i][:, idx, :] for i in range(len(self.data_tuple))])
+        self.i += 1
+        return batch
+
+    def __len__(self):
+        return self.n_batches
+
+
 class DataSetTs(Dataset):
     def __init__(self, x, y):
         self.x = x
