@@ -37,12 +37,14 @@ class Encoder(nn.Module):
         self.dx = dx
 
         self.gru = nn.GRU(input_size=dy, hidden_size=dh, bidirectional=True)
-        self.readout = nn.Linear(dh, 2*dx)
+        self.readout = nn.Linear(2 * dh, 2 * dx)
 
     def forward(self, x):
-        h, h_l = self.gru(x)
-        h = h.view(x.shape[0], x.shape[1], 2, self.dh)[:, :, 1, :]
-        out = self.readout(h)
+        h, _ = self.gru(x)
+
+        h = h.view(x.shape[0], x.shape[1], 2, self.dh)
+        h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
+        out = self.readout(h_cat)
 
         dim = int(self.dx)
         mu, logvar = torch.split(out, [dim, dim], -1)
