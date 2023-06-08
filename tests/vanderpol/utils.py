@@ -50,22 +50,23 @@ def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
     ref_vae: pre-trained vae
     prior: pre-trained prior
     linear_map: linear alignment matrix of size dy x dy_ref
-    y: new dataset to be aligned of shape K x T x dy
+    y: new dataset to be aligned of shape K x T x dy TODO: shouldn't it be Time by K by dy?
     update_prior: True or False depending on whether prior params are trained
     """
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
 
-    dy, dy_ref = linear_map.shape
-    y_tfm = y@linear_map
+    dy, dy_ref = linear_map.shape  # Assumption right now is that dy and dy_ref are of same dimension and no translations
+    y_tfm = y@linear_map  # apply linear transformation to new dataset
 
-    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)
+    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)  # for the given dataset
 
     y_tfm_recon = likelihood_params[0]
 
-    "now invert it back to original space"
+    "now invert it back to original space, e.g. y_hat = y_tfm @ linear_map^{-1}"
     # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
-    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1,dy_ref).T)[0]
+    # TODO: why reshape, you should be able to do this across the last 2 dimensions
+    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1, dy_ref).T)[0]
 
     mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
 
@@ -84,6 +85,7 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat, update_pr
     linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
 
     # data = SeqDataLoader((y,), batch_size=100)
+    # TODO: we shouldn't touch the prior parameters at all, the prior is just supposed to serve as a regularizer
     if update_prior:
         param_list = [linear_map]+list(prior.parameters())
     else:

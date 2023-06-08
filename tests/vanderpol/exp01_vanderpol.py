@@ -22,7 +22,7 @@ data = torch.load('vanderpol.pt')
 def train_ref_vae():
     "extract reference data"
     x, y = data[0]['x'], data[0]['y']
-    x_train, y_train = x[:, :n_train, :], y[:, :n_train, :]
+    x_train, y_train = x[:, :n_train, :], y[:, :n_train, :]  # Time by Batch by Dimension
 
     data_ref = SeqDataLoader((x_train.float(), y_train.float()), batch_size=100)
 
