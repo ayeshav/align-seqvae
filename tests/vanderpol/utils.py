@@ -44,14 +44,13 @@ def vae_training(vae, prior, epochs, data):
 #     y_recon = likelihood_params[0]
 
 
-def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
+def compute_map_mse(ref_vae, prior, linear_map, y, rp_mat):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
     prior: pre-trained prior
     linear_map: linear alignment matrix of size dy x dy_ref
     y: new dataset to be aligned of shape K x T x dy TODO: shouldn't it be Time by K by dy?
-    update_prior: True or False depending on whether prior params are trained
     """
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
@@ -64,19 +63,15 @@ def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
     y_tfm_recon = likelihood_params[0]
 
     "now invert it back to original space, e.g. y_hat = y_tfm @ linear_map^{-1}"
-    # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
     # TODO: why reshape, you should be able to do this across the last 2 dimensions
     y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1, dy_ref).T)[0]
 
     mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
 
-    if update_prior:
-        return mse - torch.mean(log_prior)
-    else:
-        return mse
+    return mse
 
 
-def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat, update_prior):
+def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -85,28 +80,23 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat, update_pr
     linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
 
     # data = SeqDataLoader((y,), batch_size=100)
-    # TODO: we shouldn't touch the prior parameters at all, the prior is just supposed to serve as a regularizer
-    if update_prior:
-        param_list = [linear_map]+list(prior.parameters())
-    else:
-        param_list = [linear_map]
 
-    opt = torch.optim.Adam(params=param_list, lr=1e-2)
+    opt = torch.optim.Adam(params=[linear_map], lr=1e-2)
     for _ in range(epochs):
 
         # for y_b,  in data:
         opt.zero_grad()
-        loss = compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat)
+        loss = compute_map_mse(ref_vae, prior, linear_map, y, rp_mat)
         loss.backward()
         opt.step()
 
         with torch.no_grad():
             print(loss.item())
 
-    return linear_map, prior
+    return linear_map
 
 
-def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
+def obs_alignment(ref_res, prior, y, y_ref, epochs=20, update_prior=True):
     """
     ref_res: reference vae trained on y_ref
     prior: trained prior on y_ref
@@ -121,15 +111,8 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
     if dy != dy_ref:
         rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
 
-    if lstq:
-
-        y_cat, y_ref_cat = y.reshape(-1, dy), y_ref.reshape(-1, dy_ref)
-
-        return torch.linalg.lstsq(y_cat, y_ref_cat)
-
-    else:
-        linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
-        return linear_map, rp_mat, prior
+    linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
+    return linear_map, rp_mat, prior
 
 # Utils for data
 
