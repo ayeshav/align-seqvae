@@ -60,7 +60,7 @@ params['scale'] = 1 / 0.4
 Q = 0.01 # observation noise
 
 "different number of observations for sessions/animals"
-N = [20, 50, 30]
+N = [30, 30, 30]
 
 "let's start with the same number of trials and trial length"
 K = 400
@@ -92,7 +92,7 @@ for j in range(len(N)):
 
     data_all.append(data)
 
-torch.save(data_all, 'noisy_vanderpol.pt')
+torch.save(data_all, 'data/noisy_vanderpol.pt')
 
 
 

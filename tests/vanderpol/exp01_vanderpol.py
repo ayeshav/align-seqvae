@@ -16,7 +16,7 @@ dh = 256
 n_train = 300
 
 "load vanderpol data"
-data = torch.load('vanderpol.pt')
+data = torch.load('data/noisy_vanderpol.pt')
 
 
 def train_ref_vae():
@@ -32,7 +32,7 @@ def train_ref_vae():
     vae = SeqVae(dx, dy_ref, dh)
     res = vae_training(vae, prior, 300, data_ref)
 
-    torch.save(res, 'reference_model.pt')
+    torch.save(res, 'trained_models/reference_model.pt')
 
 
 def reuse_dynamics(reference, lstq, epochs=20):
@@ -50,12 +50,20 @@ def reuse_dynamics(reference, lstq, epochs=20):
 
 def main():
 
-    if not os.path.isfile('reference_model.pt'):
+    model_path = 'trained_models'
+    results_path = 'results'
+
+    if not os.path.isdir(model_path):
+        os.makedirs(model_path)
+    if not os.path.isdir(results_path):
+        os.makedirs(results_path)
+
+    if not os.path.isfile(model_path + 'reference_model.pt'):
         train_ref_vae()
 
-    res_alignment = reuse_dynamics('reference_model.pt', False, 50)
-
-    torch.save(res_alignment, 'result.pt')
+    res_alignment = reuse_dynamics(model_path + 'reference_model.pt', False, 50)
+    #
+    # torch.save(res_alignment, 'result.pt')
 
 
 if __name__ == '__main__':
