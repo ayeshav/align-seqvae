@@ -54,10 +54,10 @@ def main():
     if not os.path.isdir(results_path):
         os.makedirs(results_path)
 
-    if not os.path.isfile(model_path + 'reference_model.pt'):
+    if not os.path.isfile(model_path + '/reference_model.pt'):
         train_ref_vae()
 
-    res_alignment = reuse_dynamics(model_path + 'reference_model.pt', 50)
+    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 50)
     #
     # torch.save(res_alignment, 'result.pt')
 

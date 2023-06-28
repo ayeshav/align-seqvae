@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import os
 from scipy.integrate import odeint
 
 torch.manual_seed(42)
@@ -91,6 +92,11 @@ for j in range(len(N)):
     data['C'] = C
 
     data_all.append(data)
+
+data_path = 'data'
+
+if not os.path.isdir(data_path):
+    os.makedirs(data_path)
 
 torch.save(data_all, 'data/noisy_vanderpol.pt')
 
