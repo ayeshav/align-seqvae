@@ -1,11 +1,12 @@
 import numpy as np
+import numpy.random as npr
 import torch
 import os
 from scipy.integrate import odeint
 
 torch.manual_seed(42)
 torch.random.manual_seed(42)
-np.random.seed(0)
+npr.seed(0)
 
 
 def vanderpol_osc(T, t_eval, mu, x0):
@@ -58,14 +59,14 @@ params['tau_2'] = 0.1
 params['sigma'] = 0.05  # noise add into euler integration
 params['scale'] = 1 / 0.4
 
-Q = 0.01 # observation noise
+Q = 0.01  # observation noise
 
 "different number of observations for sessions/animals"
-N = [30, 30, 30]
+N = [30, 30, 30, 40, 50]
 
 "let's start with the same number of trials and trial length"
-K = 400
-T = 1000
+K = 1_000  # number of batches
+T = 300  # length of trials
 
 dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
@@ -78,7 +79,7 @@ for j in range(len(N)):
 
     data = {}
 
-    x0 = np.random.uniform(-1,1, (K, dx))
+    x0 = 6 * npr.rand(K, dx) - 3
 
     C = np.random.randn(dx, N[j]) / np.sqrt(dx)
     y = np.empty((K, T, N[j]))
@@ -87,8 +88,8 @@ for j in range(len(N)):
         x[i] = noisy_vanderpol(T+1, t_eval, params, x0[i])[1:]
         y[i] = x[i]@C + np.expand_dims(np.random.randn(N[j]),0)*Q
 
-    data['x'] = torch.from_numpy(x.transpose(1,0,2))
-    data['y'] = torch.from_numpy(y.transpose(1,0,2))
+    data['x'] = torch.from_numpy(x.transpose(1, 0, 2))
+    data['y'] = torch.from_numpy(y.transpose(1, 0, 2))
     data['C'] = C
 
     data_all.append(data)
@@ -99,8 +100,3 @@ if not os.path.isdir(data_path):
     os.makedirs(data_path)
 
 torch.save(data_all, 'data/noisy_vanderpol.pt')
-
-
-
-
-
