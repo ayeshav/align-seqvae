@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 from torch.distributions import Normal, MultivariateNormal
 from seq_vae import SeqVae
-from torch.utils.data import Dataset
 from tqdm import tqdm
 
 
@@ -58,6 +57,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     :return: trained vae and training losses
     """
     assert isinstance(vae, SeqVae)
+    assert isinstance(train_dataloader, SeqDataLoader)
     opt = torch.optim.AdamW(params=vae.parameters(), lr=lr, weight_decay=weight_decay)
     training_losses = []
     for _ in tqdm(range(n_epochs)):
