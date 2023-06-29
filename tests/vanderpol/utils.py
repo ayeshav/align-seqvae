@@ -54,7 +54,6 @@ def compute_map_mse(ref_vae, prior, linear_map, y):
     prior: pre-trained prior
     linear_map: linear alignment matrix of size dy x dy_ref
     y: new dataset to be aligned of shape K x T x dy TODO: shouldn't it be Time by K by dy?
-    update_prior: True or False depending on whether prior params are trained
     """
     assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
@@ -84,24 +83,6 @@ def compute_map_mse(ref_vae, prior, linear_map, y):
     return -loss
 
 
-
-
-    # y_tfm_recon = likelihood_params[0]
-    #
-    # "now invert it back to original space, e.g. y_hat = y_tfm @ linear_map^{-1}"
-    # # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
-    # # TODO: why reshape, you should be able to do this across the last 2 dimensions
-    # y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1, dy_ref).T)[0]
-    #
-    # mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
-    #
-    # if update_prior:
-    #     return mse - torch.mean(log_prior)
-    # else:
-    #     return mse
-
-
-
 def train_invertible_mapping(epochs, ref_vae, prior, y, dy_ref):
     """
     training function for learning linear alignment and updating prior params
@@ -127,7 +108,7 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, dy_ref):
     return linear_map, training_losses
 
 
-def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
+def obs_alignment(ref_res, prior, y, y_ref, epochs=20, update_prior=True):
     """
     ref_res: reference vae trained on y_ref
     prior: trained prior on y_ref
@@ -142,15 +123,8 @@ def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
     if dy != dy_ref:
         rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
 
-    if lstq:
-
-        y_cat, y_ref_cat = y.reshape(-1, dy), y_ref.reshape(-1, dy_ref)
-
-        return torch.linalg.lstsq(y_cat, y_ref_cat)
-
-    else:
-        linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
-        return linear_map, rp_mat, prior
+    linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
+    return linear_map, rp_mat, prior
 
 # Utils for data
 
