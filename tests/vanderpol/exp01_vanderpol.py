@@ -16,7 +16,7 @@ dh = 256
 n_train = 300
 
 "load vanderpol data"
-data = torch.load('vanderpol.pt')
+data = torch.load('noisy_vanderpol.pt')
 
 
 def train_ref_vae():

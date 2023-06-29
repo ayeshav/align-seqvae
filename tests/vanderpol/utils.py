@@ -1,10 +1,13 @@
+import math
+
 import numpy as np
 
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
+from torch.distributions import Normal, MultivariateNormal
 from seq_vae import SeqVae, Prior
 from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 def compute_elbo(vae, prior, y):
@@ -21,7 +24,7 @@ def vae_training(vae, prior, epochs, data):
 
     opt = torch.optim.Adam(params=list(prior.parameters()) + list(vae.parameters()), lr=1e-2)
     losses = []
-    for _ in range(epochs):
+    for _ in tqdm(range(epochs)):
         for x, y in data:
             opt.zero_grad()
             loss = compute_elbo(vae, prior, y.permute(1, 0, 2))
@@ -44,7 +47,7 @@ def vae_training(vae, prior, epochs, data):
 #     y_recon = likelihood_params[0]
 
 
-def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
+def compute_map_mse(ref_vae, prior, linear_map, y):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -57,53 +60,71 @@ def compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat):
     assert isinstance(ref_vae, SeqVae)
 
     dy, dy_ref = linear_map.shape  # Assumption right now is that dy and dy_ref are of same dimension and no translations
-    y_tfm = y@linear_map  # apply linear transformation to new dataset
+    y_tfm = y @ linear_map  # apply linear transformation to new dataset
 
     encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)  # for the given dataset
 
-    y_tfm_recon = likelihood_params[0]
+    x_samples = encoder_params[2]  # sample from the encoder after doing the transformation
 
-    "now invert it back to original space, e.g. y_hat = y_tfm @ linear_map^{-1}"
-    # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
-    # TODO: why reshape, you should be able to do this across the last 2 dimensions
-    y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1, dy_ref).T)[0]
+    # measure samples under the log prior to make sure it matches up with the learned generative model
+    log_prior = ref_vae._prior(x_samples, prior)
 
-    mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
+    # now, we want to make sure we can reconstruct the original data, NOT y_tfm
+    # TODO: can we show that reconstructing y_tfm is equivalent to learning to reconstruct y???
+    mu_like_tfm, sigma_like_tfm, _ = likelihood_params
 
-    if update_prior:
-        return mse - torch.mean(log_prior)
-    else:
-        return mse
+    # let's commit a sin and work with inverses
+    inv_linear_map = torch.linalg.pinv(linear_map)
+    mu_like = mu_like_tfm @ inv_linear_map
+    sigma_like = inv_linear_map.T @ (sigma_like_tfm * torch.eye(dy_ref)) @ inv_linear_map
+    sigma_like = sigma_like + 1e-5 * torch.eye(dy)  # for numerical stability
+    log_like = torch.sum(MultivariateNormal(mu_like, covariance_matrix=sigma_like).log_prob(y))
+
+    loss = torch.mean(log_like + log_prior)
+    return -loss
 
 
-def train_invertible_mapping(epochs, ref_vae, prior, y, y_ref, rp_mat, update_prior):
+
+
+    # y_tfm_recon = likelihood_params[0]
+    #
+    # "now invert it back to original space, e.g. y_hat = y_tfm @ linear_map^{-1}"
+    # # y_tfm_recon_original = (y_tfm_recon@torch.linalg.pinv(linear_map))@torch.linalg.pinv(rp_mat)
+    # # TODO: why reshape, you should be able to do this across the last 2 dimensions
+    # y_tfm_recon_original = torch.linalg.lstsq(linear_map.T, y_tfm_recon.reshape(-1, dy_ref).T)[0]
+    #
+    # mse = torch.mean((y.reshape(-1, dy).T - y_tfm_recon_original)**2)
+    #
+    # if update_prior:
+    #     return mse - torch.mean(log_prior)
+    # else:
+    #     return mse
+
+
+
+def train_invertible_mapping(epochs, ref_vae, prior, y, dy_ref):
     """
     training function for learning linear alignment and updating prior params
     """
     dy = y.shape[2]
-    dy_ref = y_ref.shape[2]
-    linear_map = nn.Parameter(torch.rand(dy, dy_ref), requires_grad=True)
+    linear_map = nn.Parameter(torch.randn(dy, dy_ref) / math.sqrt(dy), requires_grad=True)
 
-    # data = SeqDataLoader((y,), batch_size=100)
-    # TODO: we shouldn't touch the prior parameters at all, the prior is just supposed to serve as a regularizer
-    if update_prior:
-        param_list = [linear_map]+list(prior.parameters())
-    else:
-        param_list = [linear_map]
+    param_list = [linear_map]
+    training_losses = []
+    opt = torch.optim.Adam(params=param_list, lr=1e-3)
 
-    opt = torch.optim.Adam(params=param_list, lr=1e-2)
-    for _ in range(epochs):
+    for _ in tqdm(range(epochs)):
 
         # for y_b,  in data:
         opt.zero_grad()
-        loss = compute_map_mse(ref_vae, prior, linear_map, y, update_prior, rp_mat)
+        loss = compute_map_mse(ref_vae, prior, linear_map, y)
         loss.backward()
         opt.step()
 
         with torch.no_grad():
-            print(loss.item())
+            training_losses.append(loss.item())
 
-    return linear_map, prior
+    return linear_map, training_losses
 
 
 def obs_alignment(ref_res, prior, y, y_ref, lstq, epochs=20, update_prior=True):
