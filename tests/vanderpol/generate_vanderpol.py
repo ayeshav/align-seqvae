@@ -88,8 +88,8 @@ for j in range(len(N)):
         x[i] = noisy_vanderpol(T+1, t_eval, params, x0[i])[1:]
         y[i] = x[i]@C + np.expand_dims(np.random.randn(N[j]),0)*Q
 
-    data['x'] = torch.from_numpy(x.transpose(1, 0, 2))
-    data['y'] = torch.from_numpy(y.transpose(1, 0, 2))
+    data['x'] = torch.from_numpy(x)
+    data['y'] = torch.from_numpy(y)
     data['C'] = C
 
     data_all.append(data)
