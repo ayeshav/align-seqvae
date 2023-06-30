@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 
 class SeqDataLoader:
-    def __init__(self, data_tuple, batch_size, shuffle=False):
+    def __init__(self, data_tuple, batch_size, shuffle=True):
         """
         Constructor for fast data loader
         :param data_tuple: a tuple of matrices of size Batch size x Time x dy
@@ -57,6 +57,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     :return: trained vae and training losses
     """
     assert isinstance(vae, SeqVae)
+    assert train_dataloader.shuffle
     assert isinstance(train_dataloader, SeqDataLoader)
     opt = torch.optim.AdamW(params=vae.parameters(), lr=lr, weight_decay=weight_decay)
     training_losses = []
@@ -69,6 +70,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
 
             with torch.no_grad():
                 training_losses.append(loss.item())
+        print(loss.item())
     return vae, training_losses
 
 
