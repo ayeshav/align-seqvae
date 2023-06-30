@@ -63,7 +63,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     for _ in tqdm(range(n_epochs)):
         for y in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device))
+            loss = vae(torch.stack(y).to(vae.device))
             loss.backward()
             opt.step()
 
@@ -72,7 +72,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     return vae, training_losses
 
 
-def compute_map_mse(ref_vae, prior, linear_map, y):
+def compute_map_mse(ref_vae, linear_map, y):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -80,22 +80,19 @@ def compute_map_mse(ref_vae, prior, linear_map, y):
     linear_map: linear alignment matrix of size dy x dy_ref
     y: new dataset to be aligned of shape K x T x dy TODO: shouldn't it be Time by K by dy?
     """
-    assert isinstance(prior, Prior)
     assert isinstance(ref_vae, SeqVae)
 
     dy, dy_ref = linear_map.shape  # Assumption right now is that dy and dy_ref are of same dimension and no translations
     y_tfm = y @ linear_map  # apply linear transformation to new dataset
 
-    encoder_params, likelihood_params, log_prior = ref_vae(y_tfm, prior)  # for the given dataset
-
-    x_samples = encoder_params[2]  # sample from the encoder after doing the transformation
+    x_samples, _, _, _ = ref_vae.encoder(y_tfm)  # for the given dataset
 
     # measure samples under the log prior to make sure it matches up with the learned generative model
-    log_prior = ref_vae._prior(x_samples, prior)
+    log_prior = ref_vae._prior(x_samples)
 
     # now, we want to make sure we can reconstruct the original data, NOT y_tfm
     # TODO: can we show that reconstructing y_tfm is equivalent to learning to reconstruct y???
-    mu_like_tfm, sigma_like_tfm, _ = likelihood_params
+    mu_like_tfm, sigma_like_tfm = ref_vae.decoder.compute_param(x_samples)
 
     # let's commit a sin and work with inverses
     inv_linear_map = torch.linalg.pinv(linear_map)
@@ -108,22 +105,21 @@ def compute_map_mse(ref_vae, prior, linear_map, y):
     return -loss
 
 
-def train_invertible_mapping(epochs, ref_vae, prior, y, dy_ref):
+def train_invertible_mapping(ref_vae, y, dy_ref, n_epochs):
     """
     training function for learning linear alignment and updating prior params
     """
     dy = y.shape[2]
     linear_map = nn.Parameter(torch.randn(dy, dy_ref) / math.sqrt(dy), requires_grad=True)
 
-    param_list = [linear_map]
     training_losses = []
-    opt = torch.optim.Adam(params=param_list, lr=1e-3)
+    opt = torch.optim.Adam(params=[linear_map], lr=1e-3)
 
-    for _ in tqdm(range(epochs)):
+    for _ in tqdm(range(n_epochs)):
 
         # for y_b,  in data:
         opt.zero_grad()
-        loss = compute_map_mse(ref_vae, prior, linear_map, y)
+        loss = compute_map_mse(ref_vae, linear_map, y)
         loss.backward()
         opt.step()
 
@@ -133,7 +129,7 @@ def train_invertible_mapping(epochs, ref_vae, prior, y, dy_ref):
     return linear_map, training_losses
 
 
-def obs_alignment(ref_res, prior, y, y_ref, epochs=20, update_prior=True):
+def obs_alignment(ref_vae, y, y_ref, n_epochs=20):
     """
     ref_res: reference vae trained on y_ref
     prior: trained prior on y_ref
@@ -148,6 +144,6 @@ def obs_alignment(ref_res, prior, y, y_ref, epochs=20, update_prior=True):
     if dy != dy_ref:
         rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
 
-    linear_map, prior = train_invertible_mapping(epochs, ref_res, prior, y, y_ref, rp_mat, update_prior)
+    linear_map, prior = train_invertible_mapping(ref_vae, y, dy_ref, n_epochs)
     return linear_map, rp_mat, prior
 

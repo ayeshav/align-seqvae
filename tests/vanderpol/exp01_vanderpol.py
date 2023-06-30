@@ -24,23 +24,23 @@ def train_ref_vae():
     x, y = data[0]['x'], data[0]['y']
     x_train, y_train = x[:, :n_train, :], y[:, :n_train, :]  # Time by Batch by Dimension
 
-    data_ref = SeqDataLoader((x_train.float(), y_train.float()), batch_size=100)
+    data_ref = SeqDataLoader((y_train.float()), batch_size=100)
 
     dy_ref = y.shape[2]
 
     prior = Prior(dx)
     vae = SeqVae(dx, dy_ref, dh)
-    res = vae_training(vae, prior, 300, data_ref)
+    res = vae_training(vae, data_ref)
 
     torch.save(res, 'trained_models/reference_model.pt')
 
 
 def reuse_dynamics(reference, epochs=20):
 
-    vae, prior, _ = torch.load(reference)
+    vae, _ = torch.load(reference)
 
     # for i in range(1, len(data)):
-    res_alignment = obs_alignment(vae, prior, data[1]['y'].float(), data[0]['y'].float(), epochs=epochs)
+    res_alignment = obs_alignment(vae, data[1]['y'].float(), data[0]['y'].float())
 
     return res_alignment
 
