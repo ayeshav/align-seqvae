@@ -61,9 +61,9 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     opt = torch.optim.AdamW(params=vae.parameters(), lr=lr, weight_decay=weight_decay)
     training_losses = []
     for _ in tqdm(range(n_epochs)):
-        for y in train_dataloader:
+        for y, in train_dataloader:
             opt.zero_grad()
-            loss = vae(torch.stack(y).to(vae.device))
+            loss = vae(y.to(vae.device))
             loss.backward()
             opt.step()
 
