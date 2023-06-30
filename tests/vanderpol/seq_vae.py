@@ -99,7 +99,7 @@ class Decoder(nn.Module):
         super().__init__()
         self.device = device
         self.decoder = nn.Sequential(nn.Linear(dx, dy)).to(device)
-        self.logvar = nn.Parameter(torch.ones(1, dy, device=device), requires_grad=True)
+        self.logvar = nn.Parameter(torch.randn(1, dy, device=device), requires_grad=True)
 
     def compute_param(self, x):
         mu = self.decoder(x)
