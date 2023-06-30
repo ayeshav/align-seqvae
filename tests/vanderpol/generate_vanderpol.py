@@ -82,7 +82,7 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2):
 # params['sigma'] = 0.05  # noise add into euler integration
 # params['scale'] = 1 / 0.4
 
-sigma_x = 0.1  # state noise
+sigma_x = 0.5  # state noise
 sigma_y = 0.1  # observation noise
 dt = 1e-2  # euler integration time step
 mu = 1.5
