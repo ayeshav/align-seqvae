@@ -34,9 +34,9 @@ def train_ref_vae():
     sigma_train = torch.std(y_train.reshape(-1, dy_ref), 0, keepdim=True)
     y_train = (y_train - mu_train) / sigma_train
 
-    data_ref = SeqDataLoader((y_train,), batch_size=50, shuffle=True)
+    data_ref = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
     vae = SeqVae(dx, dy_ref, dh, device=device)
-    res = vae_training(vae, data_ref, lr=5e-4, n_epochs=500)
+    res = vae_training(vae, data_ref, lr=1e-3, n_epochs=5_000)
 
     torch.save(res, 'trained_models/reference_model.pt')
 
