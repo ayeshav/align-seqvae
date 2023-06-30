@@ -14,6 +14,7 @@ elif torch.cuda.is_available():
     device = 'cuda'
 else:
     device = 'cpu'
+device = 'cpu'
 print(device)
 
 "load vanderpol data"
@@ -26,11 +27,14 @@ def train_ref_vae():
     x, y = data[0]['x'], data[0]['y']
     dy_ref = y.shape[2]
     N_train = int(np.ceil(0.8 * x.shape[0]))
-    x_train, y_train = x[:N_train], y[:N_train]  # Batch by Time by Dimension
+    x_train, y_train = x[:N_train].float(), y[:N_train].float()  # Batch by Time by Dimension
 
-    data_ref = SeqDataLoader((y_train.float(),), batch_size=100)
+    # Let's whiten the data to make it more numerically stable
+    mu_train = torch.mean(y_train.reshape(-1, dy_ref), 0, keepdim=True)
+    sigma_train = torch.std(y_train.reshape(-1, dy_ref), 0, keepdim=True)
+    y_train = (y_train - mu_train) / sigma_train
 
-
+    data_ref = SeqDataLoader((y_train,), batch_size=100)
     vae = SeqVae(dx, dy_ref, dh, device=device)
     res = vae_training(vae, data_ref)
 
