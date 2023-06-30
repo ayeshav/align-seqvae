@@ -1,7 +1,7 @@
 import os
 import numpy as np
 from utils import *
-from seq_vae import SeqVae, Prior
+from seq_vae import SeqVae
 
 import matplotlib.pyplot as plt
 
@@ -16,7 +16,6 @@ else:
     device = 'cpu'
 print(device)
 
-
 "load vanderpol data"
 data = torch.load('data/noisy_vanderpol.pt')
 
@@ -25,12 +24,12 @@ def train_ref_vae():
     "extract reference data"
     # data is batch by time by dimension
     x, y = data[0]['x'], data[0]['y']
+    dy_ref = y.shape[2]
     N_train = int(np.ceil(0.8 * x.shape[0]))
     x_train, y_train = x[:N_train], y[:N_train]  # Batch by Time by Dimension
 
     data_ref = SeqDataLoader((y_train.float(),), batch_size=100)
 
-    dy_ref = y.shape[2]
 
     vae = SeqVae(dx, dy_ref, dh, device=device)
     res = vae_training(vae, data_ref)
