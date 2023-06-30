@@ -1,10 +1,5 @@
 import os
-
-import torch
-import torch.nn.functional as F
-from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
-
+import numpy as np
 from utils import *
 from seq_vae import SeqVae, Prior
 
@@ -13,7 +8,14 @@ import matplotlib.pyplot as plt
 dx = 2
 dh = 256
 
-n_train = 300
+if torch.has_mps:
+    device = 'mps'
+elif torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
+print(device)
+
 
 "load vanderpol data"
 data = torch.load('data/noisy_vanderpol.pt')
@@ -21,15 +23,16 @@ data = torch.load('data/noisy_vanderpol.pt')
 
 def train_ref_vae():
     "extract reference data"
+    # data is batch by time by dimension
     x, y = data[0]['x'], data[0]['y']
-    x_train, y_train = x[:, :n_train, :], y[:, :n_train, :]  # Time by Batch by Dimension
+    N_train = int(np.ceil(0.8 * x.shape[0]))
+    x_train, y_train = x[:N_train], y[:N_train]  # Batch by Time by Dimension
 
-    data_ref = SeqDataLoader((y_train.float()), batch_size=100)
+    data_ref = SeqDataLoader((y_train.float(),), batch_size=100)
 
     dy_ref = y.shape[2]
 
-    prior = Prior(dx)
-    vae = SeqVae(dx, dy_ref, dh)
+    vae = SeqVae(dx, dy_ref, dh, device=device)
     res = vae_training(vae, data_ref)
 
     torch.save(res, 'trained_models/reference_model.pt')
@@ -58,7 +61,7 @@ def main():
     if not os.path.isfile(model_path + '/reference_model.pt'):
         train_ref_vae()
 
-    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 50)
+    # res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 50)
     #
     # torch.save(res_alignment, 'result.pt')
 
