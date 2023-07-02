@@ -6,7 +6,7 @@ from seq_vae import SeqVae
 import matplotlib.pyplot as plt
 
 dx = 2
-dh = 256
+dh = 64
 
 if torch.has_mps:
     device = 'mps'
