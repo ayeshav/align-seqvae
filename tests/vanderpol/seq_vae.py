@@ -67,8 +67,7 @@ class Encoder(nn.Module):
         h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
         out = self.readout(h_cat)
 
-        dim = int(self.dx)
-        mu, logvar = torch.split(out, [dim, dim], -1)
+        mu, logvar = torch.split(out, [self.dx, self.dx], -1)
         var = Softplus(logvar) + eps
         return mu, var
 
@@ -144,7 +143,7 @@ class SeqVae(nn.Module):
         :return:
         """
         # pass data through encoder and get mean, variance, samples and log density
-        mu, var, x_samples, log_q = self.encoder(y)
+        x_samples, mu, var, log_q = self.encoder(y)
 
         # given samples, compute the log prior
         log_prior = self._prior(x_samples)
