@@ -6,7 +6,7 @@ from seq_vae import SeqVae
 from tqdm import tqdm
 
 
-def compute_alignment_loss(ref_vae, linear_map, y, noisy_log_like=True):
+def compute_alignment_loss(ref_vae, linear_map, y, noisy_log_like=False):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -45,7 +45,7 @@ def compute_alignment_loss(ref_vae, linear_map, y, noisy_log_like=True):
     return -loss
 
 
-def train_invertible_mapping(ref_vae, train_dataloader, dy_ref, n_epochs, noisy_log_like=True):
+def train_invertible_mapping(ref_vae, train_dataloader, dy_ref, n_epochs, noisy_log_like=False):
     """
     training function for learning linear alignment and updating prior params
     """
