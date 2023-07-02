@@ -36,7 +36,7 @@ def train_ref_vae():
 
     data_ref = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
     vae = SeqVae(dx, dy_ref, dh, device=device)
-    res = vae_training(vae, data_ref, lr=1e-3, n_epochs=5_000)
+    res = vae_training(vae, data_ref, lr=1e-3, n_epochs=2_000)
 
     torch.save(res, 'trained_models/reference_model.pt')
 
