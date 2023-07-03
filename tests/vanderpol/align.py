@@ -4,6 +4,7 @@ import torch.nn as nn
 from torch.distributions import Normal, MultivariateNormal
 from seq_vae import SeqVae
 from tqdm import tqdm
+from utils import SeqDataLoader
 
 
 def compute_alignment_loss(ref_vae, linear_map, y, noisy_log_like=False):
@@ -78,12 +79,13 @@ def obs_alignment(ref_vae, y, y_ref, n_epochs=20):
 
     returns linear map, rp_mat and trained prior
     """
-    T, N, dy = y.shape
     dy_ref = y_ref.shape[2]
+    #
+    # if dy != dy_ref:
+    #     rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
 
-    if dy != dy_ref:
-        rp_mat = torch.randn(dy, dy_ref) * (1 / dy_ref)
+    y_dataloader = SeqDataLoader((y,), batch_size=100, shuffle=True)
 
-    linear_map, prior = train_invertible_mapping(ref_vae, y, dy_ref, n_epochs)
-    return linear_map, rp_mat, prior
+    linear_map, losses = train_invertible_mapping(ref_vae, y_dataloader, dy_ref, n_epochs)
+    return linear_map, losses
 

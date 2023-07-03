@@ -2,6 +2,7 @@ import os
 import numpy as np
 from utils import *
 from seq_vae import SeqVae
+from align import *
 
 import matplotlib.pyplot as plt
 
@@ -46,7 +47,7 @@ def reuse_dynamics(reference, epochs=20):
     vae, _ = torch.load(reference)
 
     # for i in range(1, len(data)):
-    res_alignment = obs_alignment(vae, data[1]['y'].float(), data[0]['y'].float())
+    res_alignment = obs_alignment(vae, data[1]['y'].float(), data[0]['y'].float(), epochs)
 
     return res_alignment
 
@@ -62,9 +63,9 @@ def main():
         os.makedirs(results_path)
 
     # if not os.path.isfile(model_path + '/reference_model.pt'):
-    train_ref_vae()
+    # train_ref_vae()
 
-    # res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 50)
+    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 100)
     #
     # torch.save(res_alignment, 'result.pt')
 
