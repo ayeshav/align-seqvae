@@ -42,12 +42,19 @@ def train_ref_vae():
     torch.save(res, 'trained_models/reference_model.pt')
 
 
-def reuse_dynamics(reference, epochs=20):
+def reuse_dynamics(reference_model, epochs=20):
 
-    vae, _ = torch.load(reference)
+    vae, _ = torch.load(reference_model)
+
+    y = data[1]['y'].float()
+    N_train = int(np.ceil(0.8 * y.shape[0]))
+    y_train = y[:N_train]  # Batch by Time by Dimension
+
+    dy_ref = data[1]['y'].float().shape[2]
 
     # for i in range(1, len(data)):
-    res_alignment = obs_alignment(vae, data[1]['y'].float(), data[0]['y'].float(), epochs)
+    y_dataloader = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
+    res_alignment = train_invertible_mapping(vae, y_dataloader, dy_ref, epochs)
 
     return res_alignment
 
@@ -62,12 +69,11 @@ def main():
     if not os.path.isdir(results_path):
         os.makedirs(results_path)
 
-    # if not os.path.isfile(model_path + '/reference_model.pt'):
-    # train_ref_vae()
+    if not os.path.isfile(model_path + '/reference_model.pt'):
+        train_ref_vae()
 
-    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 100)
-    #
-    # torch.save(res_alignment, 'result.pt')
+    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 250)
+    torch.save(res_alignment, 'result.pt')
 
 
 if __name__ == '__main__':
