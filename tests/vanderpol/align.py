@@ -7,7 +7,9 @@ from tqdm import tqdm
 from utils import SeqDataLoader
 
 
-def compute_alignment_loss(ref_vae, params, y, noisy_log_like=False, beta=1.):
+def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
+                           latent_mu_ref, latent_cov_ref,
+                           beta=1.):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -16,52 +18,56 @@ def compute_alignment_loss(ref_vae, params, y, noisy_log_like=False, beta=1.):
     """
     assert isinstance(ref_vae, SeqVae)
 
-    f_enc, f_dec = params
-
-    dy, dy_ref = f_enc[:-1].shape  # assumption is that there is no translation
-    y_tfm = y @ f_enc[:-1] + f_enc[[-1]]  # apply linear transformation to new dataset
+    y_tfm = f_enc(y)  # apply linear transformation to new dataset
 
     x_samples, _, _, _ = ref_vae.encoder(y_tfm)  # for the given dataset
+
+    # compute mean and covariance of latent samples
+    latent_mu = torch.mean(torch.mean(x_samples.reshape(-1, y_tfm.shape[-1]), 0, keepdim=True))
+    latent_cov = torch.cov(torch.mean(x_samples.reshape(-1, y_tfm.shape[-1]), 0, keepdim=True))
+
+    cov_diff = latent_cov_ref - latent_cov
+    reg = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(cov_diff @ cov_diff.T)
 
     # measure samples under the log prior to make sure it matches up with the learned generative model
     log_prior = ref_vae._prior(x_samples)
 
     # we first want to make sure we can reconstruct y_tfm
     mu_like_tfm, var_like_tfm = ref_vae.decoder.compute_param(x_samples)
-    log_like_tfm = torch.sum(Normal(mu_like_tfm, torch.sqrt(var_like_tfm)).log_prob(y_tfm), (-1, -2))
-
-    elbo = log_like_tfm + log_prior
-
-    if noisy_log_like:
-        y_sample = mu_like_tfm + torch.sqrt(var_like_tfm) * torch.randn(mu_like_tfm.shape, device=mu_like_tfm.device)
-        log_like = -torch.sum((y - y_sample @ f_dec[:-1] + f_dec[[-1]]) ** 2, (-1, -2))
-    else:
-        mu_like = mu_like_tfm @ f_dec[:-1] + f_dec[[-1]]
-        sigma_like = f_dec[:-1].T @ (var_like_tfm * torch.eye(dy_ref, device=y.device)) @ f_dec[:-1]
-        sigma_like = sigma_like + 1e-5 * torch.eye(dy, device=y.device)  # for numerical stability
-        log_like = torch.sum(MultivariateNormal(mu_like, covariance_matrix=sigma_like).log_prob(y), -1)
-
-    loss = torch.mean(log_like + beta * elbo)
-    # loss = torch.mean(log_like + log_prior - log_q)
+    y_sample = mu_like_tfm + torch.sqrt(var_like_tfm) * torch.randn(mu_like_tfm.shape, device=mu_like_tfm.device)
+    log_like = -0.5 * torch.sum((y - f_dec(y_sample)) ** 2, (-1, -2))
+    loss = torch.mean(log_like) - beta * reg
+    # TODO: also include log prior in the loss
     return -loss
 
 
-def train_invertible_mapping(ref_vae, train_dataloader, dy_ref, n_epochs, noisy_log_like=False, beta=1.):
+def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
+                             latent_mu_ref, latent_cov_ref,
+                             n_epochs, beta=1., linear_flag=False):
     """
     training function for learning linear alignment and updating prior params
     """
+    assert isinstance(train_dataloader, SeqDataLoader)
+    assert train_dataloader.shuffle
+
     dy = train_dataloader.data_tuple[0].shape[-1]
-    f_enc = nn.Parameter(torch.randn(dy + 1, dy_ref, device=ref_vae.device) / math.sqrt(dy), requires_grad=True)
-    f_dec = nn.Parameter(torch.randn(dy_ref + 1, dy, device=ref_vae.device) / math.sqrt(dy_ref), requires_grad=True)
+    if linear_flag:
+        f_enc = nn.Sequential(*[nn.Linear(dy, 128),
+                                nn.ReLU(),
+                                nn.Linear(128, dy_ref)]).to(ref_vae.device)
+    else:
+        f_enc = nn.Linear(dy, dy_ref).to(ref_vae.device)
+    f_dec = nn.Linear(dy_ref, dy).to(ref_vae.device)
 
     training_losses = []
-    opt = torch.optim.AdamW(params=[f_enc, f_dec], lr=1e-3, weight_decay=1e-4)
+    opt = torch.optim.AdamW(params=list(f_enc.parameters()) + list(f_dec.parameters()),
+                            lr=1e-3, weight_decay=1e-4)
 
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = compute_alignment_loss(ref_vae, (f_enc, f_dec), y.to(ref_vae.device),
-                                          noisy_log_like=noisy_log_like, beta=beta)
+            loss = compute_alignment_loss(ref_vae, f_enc, f_dec,
+                                          y.to(ref_vae.device), beta=beta)
             loss.backward()
             opt.step()
 
@@ -69,6 +75,5 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref, n_epochs, noisy_
                 training_losses.append(loss.item())
 
     return (f_enc, f_dec), training_losses
-
 
 
