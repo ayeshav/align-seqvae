@@ -9,7 +9,7 @@ from utils import SeqDataLoader
 
 def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
                            latent_mu_ref, latent_cov_ref,
-                           beta=1.):
+                           beta=1., prior=True):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -23,11 +23,13 @@ def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
     x_samples, _, _, _ = ref_vae.encoder(y_tfm)  # for the given dataset
 
     # compute mean and covariance of latent samples
-    latent_mu = torch.mean(torch.mean(x_samples.reshape(-1, y_tfm.shape[-1]), 0, keepdim=True))
-    latent_cov = torch.cov(torch.mean(x_samples.reshape(-1, y_tfm.shape[-1]), 0, keepdim=True))
+    latent_mu = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
+    latent_cov = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
 
     cov_diff = latent_cov_ref - latent_cov
     reg = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(cov_diff @ cov_diff.T)
+    w2 = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(latent_cov_ref) + torch.trace(latent_cov) - \
+         2*torch.sqrt(torch.trace(torch.sqrt(latent_cov)@latent_cov_ref@torch.sqrt(latent_cov)))
 
     # measure samples under the log prior to make sure it matches up with the learned generative model
     log_prior = ref_vae._prior(x_samples)
@@ -37,13 +39,16 @@ def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
     y_sample = mu_like_tfm + torch.sqrt(var_like_tfm) * torch.randn(mu_like_tfm.shape, device=mu_like_tfm.device)
     log_like = -0.5 * torch.sum((y - f_dec(y_sample)) ** 2, (-1, -2))
     loss = torch.mean(log_like) - beta * reg
-    # TODO: also include log prior in the loss
-    return -loss
+
+    if prior:
+        return -(loss + torch.mean(log_prior))
+    else:
+        return -loss
 
 
 def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                              latent_mu_ref, latent_cov_ref,
-                             n_epochs, beta=1., linear_flag=False):
+                             n_epochs, beta=1., linear_flag=False, prior=True):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -67,7 +72,8 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
         for y, in train_dataloader:
             opt.zero_grad()
             loss = compute_alignment_loss(ref_vae, f_enc, f_dec,
-                                          y.to(ref_vae.device), beta=beta)
+                                          y.to(ref_vae.device), latent_mu_ref,
+                                          latent_cov_ref, beta=beta,  prior=prior)
             loss.backward()
             opt.step()
 

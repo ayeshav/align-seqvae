@@ -50,11 +50,18 @@ def reuse_dynamics(reference_model, epochs=20):
     N_train = int(np.ceil(0.8 * y.shape[0]))
     y_train = y[:N_train]  # Batch by Time by Dimension
 
-    dy_ref = data[1]['y'].float().shape[2]
+    dy_ref = data[0]['y'].float().shape[2]
+
+    with torch.no_grad():
+        x_samples, mu, var, _ = vae.encoder(data[0]['y'].float())
+
+        mu_ref = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
+        cov_ref = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
 
     # for i in range(1, len(data)):
     y_dataloader = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
-    res_alignment = train_invertible_mapping(vae, y_dataloader, dy_ref, epochs)
+    res_alignment = train_invertible_mapping(vae, y_dataloader, dy_ref, mu_ref,
+                                             cov_ref, epochs, beta=50)
 
     return res_alignment
 
@@ -72,8 +79,8 @@ def main():
     if not os.path.isfile(model_path + '/reference_model.pt'):
         train_ref_vae()
 
-    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 250)
-    torch.save(res_alignment, 'result.pt')
+    res_alignment = reuse_dynamics(model_path + '/reference_model.pt', 150)
+    torch.save(res_alignment, 'result_prior.pt')
 
 
 if __name__ == '__main__':
