@@ -121,7 +121,7 @@ class SeqVae(nn.Module):
         self.dx = dx
 
         self.encoder = Encoder(dy, dx, dh_e, device=device)
-        self.prior = Prior(dx, dx, device=device)
+        self.prior = Prior(dx, device=device)
         self.decoder = Decoder(dx, dy, device=device)
         self.device = device
 
