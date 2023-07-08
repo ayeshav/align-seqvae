@@ -136,6 +136,21 @@ class SeqVae(nn.Module):
         log_prior = log_prior + self.prior(x_samples)
         return log_prior
 
+    def compute_k_step_pred(self, x, k):
+
+        x_unfold = torch.Tensor.unfold(x, 1, k+1, 1)
+        mu, var = self.prior.compute_param(x_unfold[..., 0])
+
+        log_prob = 0
+
+        for i in range(k):
+            log_prob = log_prob + torch.mean(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_unfold[:, ..., i + 1]), (-2, -1)))
+
+            x_samples_next = mu + torch.sqrt(var) * torch.randn(mu.shape, device=self.device)
+            mu, var = self.prior.compute_param(x_samples_next)
+
+        return log_prob
+
     def forward(self, y):
         """
         In the forward method, we compute the negative elbo and return it back
