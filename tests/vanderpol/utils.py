@@ -68,3 +68,10 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
             with torch.no_grad():
                 training_losses.append(loss.item())
     return vae, training_losses
+
+
+def get_matrix_sqrt(cov):
+
+    lam, Q = torch.linalg.eigh(cov)
+    return Q@torch.diag(torch.sqrt(lam))@Q.T
+

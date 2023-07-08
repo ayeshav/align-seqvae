@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.distributions import Normal, MultivariateNormal
 from seq_vae import SeqVae
 from tqdm import tqdm
-from utils import SeqDataLoader
+from utils import *
 
 
 def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
@@ -26,11 +26,14 @@ def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
     latent_mu = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
     latent_cov = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
 
-    cov_diff = latent_cov_ref - latent_cov
-    reg = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(cov_diff @ cov_diff.T)
-    w2 = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(latent_cov_ref) + torch.trace(latent_cov) - \
-         2*torch.sqrt(torch.trace(torch.sqrt(latent_cov)@latent_cov_ref@torch.sqrt(latent_cov)))
+    # cov_diff = latent_cov_ref - latent_cov
+    # reg = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(cov_diff @ cov_diff.T)
 
+    cov_inv = torch.linalg.pinv(get_matrix_sqrt(latent_cov))
+    w2 = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(latent_cov_ref) + torch.trace(latent_cov) - \
+         2*torch.sqrt(torch.trace(cov_inv@latent_cov_ref@cov_inv))
+
+    # print(w2)
     # measure samples under the log prior to make sure it matches up with the learned generative model
     log_prior = ref_vae._prior(x_samples)
 
@@ -38,7 +41,7 @@ def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
     mu_like_tfm, var_like_tfm = ref_vae.decoder.compute_param(x_samples)
     y_sample = mu_like_tfm + torch.sqrt(var_like_tfm) * torch.randn(mu_like_tfm.shape, device=mu_like_tfm.device)
     log_like = -0.5 * torch.sum((y - f_dec(y_sample)) ** 2, (-1, -2))
-    loss = torch.mean(log_like) - beta * reg
+    loss = torch.mean(log_like) - beta * w2
 
     if prior:
         return -(loss + torch.mean(log_prior))
@@ -75,6 +78,7 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                                           y.to(ref_vae.device), latent_mu_ref,
                                           latent_cov_ref, beta=beta,  prior=prior)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(list(f_enc.parameters()) + list(f_dec.parameters()), max_norm=1e-1, norm_type=2)
             opt.step()
 
             with torch.no_grad():
