@@ -1,15 +1,12 @@
-import math
-import torch
 import torch.nn as nn
-from torch.distributions import Normal, MultivariateNormal
-from seq_vae import SeqVae
-from tqdm import tqdm
+from torch.distributions import Normal
 from utils import *
 
 
-def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
-                           latent_mu_ref, latent_cov_ref,
-                           beta=1., prior=True):
+def compute_alignment_loss(ref_vae,
+                           f_enc,
+                           f_dec_mean, f_dec_var,
+                           y, K):
     """
     loss for alignment between datasets
     ref_vae: pre-trained vae
@@ -18,40 +15,36 @@ def compute_alignment_loss(ref_vae, f_enc, f_dec, y,
     """
     assert isinstance(ref_vae, SeqVae)
 
+    # apply transformation to data
     y_tfm = f_enc(y)  # apply linear transformation to new dataset
 
+    # pass to encoder and get samples
     x_samples, _, _, _ = ref_vae.encoder(y_tfm)  # for the given dataset
 
-    # compute mean and covariance of latent samples
-    latent_mu = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
-    latent_cov = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
+    log_k_step_prior = 0
 
-    # cov_diff = latent_cov_ref - latent_cov
-    # reg = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(cov_diff @ cov_diff.T)
+    for t in range(x_samples.shape[1] - 1):
+        K_ahead = min(K, x_samples[:, t + 1:].shape[1])
+        _, mu_k_ahead, var_k_ahead = ref_vae.prior.sample_k_step_ahead(x_samples[:, t],
+                                                                       K_ahead)
+        log_prior = log_k_step_prior + torch.sum(Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
 
-    cov_inv = torch.linalg.pinv(get_matrix_sqrt(latent_cov))
-    w2 = torch.sum((latent_mu_ref - latent_mu) ** 2) + torch.trace(latent_cov_ref) + torch.trace(latent_cov) - \
-         2*torch.sqrt(torch.trace(cov_inv@latent_cov_ref@cov_inv))
+    # get parameters from observation model
+    mu_obsv, var_obsv = ref_vae.decoder.compute_param(x_samples)
 
-    # print(w2)
-    # measure samples under the log prior to make sure it matches up with the learned generative model
-    log_prior = ref_vae._prior(x_samples)
-
-    # we first want to make sure we can reconstruct y_tfm
-    mu_like_tfm, var_like_tfm = ref_vae.decoder.compute_param(x_samples)
-    y_sample = mu_like_tfm + torch.sqrt(var_like_tfm) * torch.randn(mu_like_tfm.shape, device=mu_like_tfm.device)
-    log_like = -0.5 * torch.sum((y - f_dec(y_sample)) ** 2, (-1, -2))
-    loss = torch.mean(log_like) - beta * w2
-
-    if prior:
-        return -(loss + torch.mean(log_prior))
-    else:
-        return -loss
+    # transform parameters to new space using decoder
+    mu_obsv_tfm = f_dec_mean(mu_obsv)
+    var_obsv_tfm = torch.exp(f_dec_var(var_obsv))
+    log_like = torch.sum(Normal(loc=mu_obsv_tfm,
+                                scale=torch.sqrt(var_obsv_tfm)).log_prob(y), (-1, -2))
+    loss = torch.mean(log_like + log_k_step_prior)
+    return -loss
 
 
 def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
-                             latent_mu_ref, latent_cov_ref,
-                             n_epochs, beta=1., linear_flag=False, prior=True):
+                             n_epochs,
+                             K=40,
+                             linear_flag=False):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -65,25 +58,26 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                                 nn.Linear(128, dy_ref)]).to(ref_vae.device)
     else:
         f_enc = nn.Linear(dy, dy_ref).to(ref_vae.device)
-    f_dec = nn.Linear(dy_ref, dy).to(ref_vae.device)
+    f_dec_mean = nn.Linear(dy_ref, dy).to(ref_vae.device)
+    f_dec_var = nn.Linear(dy_ref, dy).to(ref_vae.device)
 
     training_losses = []
-    opt = torch.optim.AdamW(params=list(f_enc.parameters()) + list(f_dec.parameters()),
+    opt = torch.optim.AdamW(params=list(f_enc.parameters()) + list(f_dec_mean.parameters()) + list(f_dec_var.parameters()),
                             lr=1e-3, weight_decay=1e-4)
 
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = compute_alignment_loss(ref_vae, f_enc, f_dec,
-                                          y.to(ref_vae.device), latent_mu_ref,
-                                          latent_cov_ref, beta=beta,  prior=prior)
+            loss = compute_alignment_loss(ref_vae, f_enc,
+                                          f_dec_mean, f_dec_var,
+                                          y.to(ref_vae.device),
+                                          K=K)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(list(f_enc.parameters()) + list(f_dec.parameters()), max_norm=1e-1, norm_type=2)
+            torch.nn.utils.clip_grad_norm_(list(f_enc.parameters()) + list(f_dec_mean.parameters()) + list(f_dec_var.parameters()),
+                                           max_norm=1., norm_type=2)
             opt.step()
 
             with torch.no_grad():
                 training_losses.append(loss.item())
 
-    return (f_enc, f_dec), training_losses
-
-
+    return (f_enc, f_dec_mean, f_dec_var), training_losses
