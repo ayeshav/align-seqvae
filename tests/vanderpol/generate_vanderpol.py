@@ -48,25 +48,35 @@ def noisy_vanderpol(T, t_eval, params, x0):
     return x
 
 
-def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2):
+def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='poisson'):
     x = np.empty((K, T, 2))
-    y = np.empty((K, T, dy))
+    y = torch.empty((K, T, dy))
 
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
 
+    b = torch.log(5 + 15 * torch.rand(dy, dtype=torch.float64))  # 10 to 60 hz baseline
+
     # generate initial conditions
     x[:, 0] = 6 * npr.rand(K, 2) - 3
-    y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
+
+    if noise_type == 'gaussian':
+        y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
+    elif noise_type == 'poisson':
+        y[:, 0] = torch.poisson(dt * (torch.from_numpy(np.exp(x[:, 0] @ C)) + b.unsqueeze(0)))
 
     # propagate time series
     for t in range(1, T):
         vel = np.empty((K, 2))
-        vel[:, 0] = mu * (x[:, t -1, 0] - x[:, t - 1, 0] ** 3 / 3 - x[:, t - 1, 1])
+        vel[:, 0] = mu * (x[:, t - 1, 0] - x[:, t - 1, 0] ** 3 / 3 - x[:, t - 1, 1])
         vel[:, 1] = x[:, t - 1, 0] / mu
 
         x[:, t] = x[:, t - 1] + dt * (vel + sigma_x * npr.randn(K, 2))
-        y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
+
+        if noise_type == 'gaussian':
+            y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
+        elif noise_type == 'poisson':
+            y[:, t] = torch.poisson(dt * (torch.from_numpy(np.exp(x[:, t] @ C)) + b.unsqueeze(0)))
     return x, y, C
 
 
@@ -96,12 +106,11 @@ dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
 
 
-
 data_all = []
 
 for dy in dys:
     x, y, C = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
-    data =  {}
+    data = {}
     data['x'] = torch.from_numpy(x)
     data['y'] = torch.from_numpy(y)
     data['C'] = C
@@ -118,25 +127,6 @@ for k in range(K):
 fig.show()
 
 
-# x = np.empty((K, T, dx))
-# for j in range(len(N)):
-#
-#     data = {}
-#
-#     x0 = 6 * npr.rand(K, dx) - 3
-#
-#     C = np.random.randn(dx, N[j]) / np.sqrt(dx)
-#     y = np.empty((K, T, N[j]))
-#
-#     for i in range(K):
-#         x[i] = noisy_vanderpol(T+1, t_eval, params, x0[i])[1:]
-#         y[i] = x[i]@C + np.expand_dims(np.random.randn(N[j]),0)*Q
-#
-#     data['x'] = torch.from_numpy(x)
-#     data['y'] = torch.from_numpy(y)
-#     data['C'] = C
-#
-#     data_all.append(data)
 
 data_path = 'data'
 print(torch.sum(torch.isnan(torch.from_numpy(y))))
