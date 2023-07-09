@@ -43,6 +43,24 @@ class Prior(nn.Module):
         log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, 1:]), (-2, -1))
         return log_prob
 
+    def sample_k_step_ahead(self, x, K, keep_trajectory=False):
+        x_trajectory = []
+        means = []
+        vars = []
+        for t in range(K):
+            if t == 0:
+                mu, var = self.compute_param(x)
+            else:
+                mu, var = self.compute_param(x_trajectory[-1])
+            means.append(mu)
+            vars.append(var)
+
+            x_trajectory.append(mu + torch.sqrt(var) * torch.randn(x.shape, device=x.device))
+        if keep_trajectory:
+            return x_trajectory, means, vars
+        else:
+            return x_trajectory[-1], means[-1], vars[-1]
+
 
 class Encoder(nn.Module):
     def __init__(self, dy, dx, dh, device='cpu'):
@@ -137,7 +155,7 @@ class SeqVae(nn.Module):
         return log_prior
 
     def compute_k_step_pred(self, x, k):
-
+        # TODO: we will use this for training the SeqVae when using multiple animals so keep like this and will edit later
         x_unfold = torch.Tensor.unfold(x, 1, k+1, 1)
         mu, var = self.prior.compute_param(x_unfold[..., 0])
 
