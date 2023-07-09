@@ -27,7 +27,7 @@ def compute_alignment_loss(ref_vae,
         K_ahead = min(K, x_samples[:, t + 1:].shape[1])
         _, mu_k_ahead, var_k_ahead = ref_vae.prior.sample_k_step_ahead(x_samples[:, t],
                                                                        K_ahead)
-        log_prior = log_k_step_prior + torch.sum(Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
+        log_k_step_prior = log_k_step_prior + torch.sum(Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
 
     # get parameters from observation model
     mu_obsv, var_obsv = ref_vae.decoder.compute_param(x_samples)
