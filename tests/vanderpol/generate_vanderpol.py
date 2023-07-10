@@ -77,7 +77,7 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
             y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
         elif noise_type == 'poisson':
             y[:, t] = torch.poisson(dt * (torch.from_numpy(np.exp(x[:, t] @ C)) + b.unsqueeze(0)))
-    return x, y, C
+    return x, y, C, b
 
 
 # "params for vdp"
@@ -109,11 +109,12 @@ t_eval = np.arange(0, (T+1) * dt, dt)
 data_all = []
 
 for dy in dys:
-    x, y, C = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
+    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
     data = {}
     data['x'] = torch.from_numpy(x)
-    data['y'] = torch.from_numpy(y)
+    data['y'] = y
     data['C'] = C
+    data['b'] = b
 
     data_all.append(data)
 
@@ -129,8 +130,8 @@ fig.show()
 
 
 data_path = 'data'
-print(torch.sum(torch.isnan(torch.from_numpy(y))))
+print(torch.sum(torch.isnan(y)))
 if not os.path.isdir(data_path):
     os.makedirs(data_path)
 
-torch.save(data_all, 'data/noisy_vanderpol.pt')
+torch.save(data_all, 'data/noisy_vanderpol_poisson.pt')
