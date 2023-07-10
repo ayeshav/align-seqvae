@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal
+from torch.distributions import Normal, Poisson
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -132,16 +132,35 @@ class Decoder(nn.Module):
         return log_prob
 
 
+class DecoderPoisson(nn.Module):
+    def __init__(self, dx, dy, device='cpu'):
+        super().__init__()
+        self.device = device
+        self.decoder = nn.Sequential(nn.Linear(dx, dy)).to(device)
+
+    def compute_rate(self, x):
+        return torch.exp(self.decoder(x))
+
+    def forward(self, samples, x):
+        rate = self.compute_rate(samples)
+        log_prob = torch.sum(Poisson(rate).log_prob(x), (-1, -2))
+        return log_prob
+
+
 class SeqVae(nn.Module):
-    def __init__(self, dx, dy, dh_e, device='cpu'):
+    def __init__(self, dx, dy, dh_e, likelihood='Normal', device='cpu'):
         super().__init__()
 
         self.dx = dx
 
         self.encoder = Encoder(dy, dx, dh_e, device=device)
         self.prior = Prior(dx, device=device)
-        self.decoder = Decoder(dx, dy, device=device)
         self.device = device
+
+        if likelihood == 'Normal':
+            self.decoder = Decoder(dx, dy, device=device)
+        elif likelihood == 'Poisson':
+            self.decoder = DecoderPoisson(dx, dy, device=device)
 
     def _prior(self, x_samples):
         """
@@ -154,22 +173,22 @@ class SeqVae(nn.Module):
         log_prior = log_prior + self.prior(x_samples)
         return log_prior
 
-    def compute_k_step_pred(self, x, k):
-        # TODO: we will use this for training the SeqVae when using multiple animals so keep like this and will edit later
-        x_unfold = torch.Tensor.unfold(x, 1, k+1, 1)
-        mu, var = self.prior.compute_param(x_unfold[..., 0])
+    # def compute_k_step_pred(self, x, k):
+    #     # TODO: we will use this for training the SeqVae when using multiple animals so keep like this and will edit later
+    #     x_unfold = torch.Tensor.unfold(x, 1, k+1, 1)
+    #     mu, var = self.prior.compute_param(x_unfold[..., 0])
+    #
+    #     log_prob = 0
+    #
+    #     for i in range(k):
+    #         log_prob = log_prob + torch.mean(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_unfold[:, ..., i + 1]), (-2, -1)))
+    #
+    #         x_samples_next = mu + torch.sqrt(var) * torch.randn(mu.shape, device=self.device)
+    #         mu, var = self.prior.compute_param(x_samples_next)
+    #
+    #     return log_prob
 
-        log_prob = 0
-
-        for i in range(k):
-            log_prob = log_prob + torch.mean(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_unfold[:, ..., i + 1]), (-2, -1)))
-
-            x_samples_next = mu + torch.sqrt(var) * torch.randn(mu.shape, device=self.device)
-            mu, var = self.prior.compute_param(x_samples_next)
-
-        return log_prob
-
-    def forward(self, y):
+    def forward(self, y, beta=1.):
         """
         In the forward method, we compute the negative elbo and return it back
         :param y: Y is a tensor of observations of size Batch by Time by Dy
@@ -185,5 +204,5 @@ class SeqVae(nn.Module):
         log_like = self.decoder(x_samples, y)
 
         # compute the elbo
-        elbo = torch.mean(log_like + log_prior - log_q)
+        elbo = torch.mean(beta*log_like + (log_prior - log_q))
         return -elbo
