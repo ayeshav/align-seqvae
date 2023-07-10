@@ -55,15 +55,18 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
 
-    b = torch.log(5 + 15 * torch.rand(dy, dtype=torch.float64))  # 10 to 60 hz baseline
+    C = torch.randn((dy, 2), dtype=torch.float64)
+    C = (1 / np.sqrt(2)) * (C / torch.norm(C, dim=1).unsqueeze(1))
+
+    b = torch.log(5 + 10 * torch.rand(dy, dtype=torch.float64))
 
     # generate initial conditions
     x[:, 0] = 6 * npr.rand(K, 2) - 3
 
     if noise_type == 'gaussian':
-        y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
+        y[:, 0] = x[:, 0] @ C.T + sigma_y * npr.randn(K, dy)
     elif noise_type == 'poisson':
-        y[:, 0] = torch.poisson(dt * (torch.from_numpy(np.exp(x[:, 0] @ C)) + b.unsqueeze(0)))
+        y[:, 0] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, 0]) @ C.T + b.unsqueeze(0)))
 
     # propagate time series
     for t in range(1, T):
@@ -74,9 +77,9 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         x[:, t] = x[:, t - 1] + dt * (vel + sigma_x * npr.randn(K, 2))
 
         if noise_type == 'gaussian':
-            y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
+            y[:, t] = x[:, t] @ C.T + sigma_y * npr.randn(K, dy)
         elif noise_type == 'poisson':
-            y[:, t] = torch.poisson(dt * (torch.from_numpy(np.exp(x[:, t] @ C)) + b.unsqueeze(0)))
+            y[:, t] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, t]) @ C.T + b.unsqueeze(0)))
     return x, y, C, b
 
 
