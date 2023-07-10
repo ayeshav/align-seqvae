@@ -70,8 +70,20 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     return vae, training_losses
 
 
-def get_matrix_sqrt(cov):
+def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
+    "function to compute wasserstein assuming P_s and P_t are independent gaussians"
 
-    lam, Q = torch.linalg.eigh(cov)
-    return Q@torch.diag(torch.sqrt(lam))@Q.T
+    matrix_sqrt = torch.sqrt(torch.diag(cov_t))
+    ind_cov_s = torch.diag((torch.diag(cov_s)))
+
+    w2 = torch.sum((mu_s - mu_t) ** 2) + torch.trace(cov_s) + torch.trace(cov_t) - \
+         2 * torch.trace(torch.sqrt(torch.diag(matrix_sqrt) @ ind_cov_s @ torch.diag(matrix_sqrt)))
+
+    return w2
+
+
+# def get_matrix_sqrt(cov):
+#
+#     lam, Q = torch.linalg.eigh(cov)
+#     return Q@torch.diag(torch.sqrt(lam))@Q.T
 
