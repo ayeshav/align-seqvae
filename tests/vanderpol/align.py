@@ -1,13 +1,13 @@
 import torch.nn as nn
-from torch.distributions import Normal, Poisson
+from torch.distributions import Normal, Poisson, Bernoulli
 from utils import *
 
 
-def get_likelihood(obsv, f_dec_params, y, distribution='Normal'):
+def get_likelihood(obsv_params, f_dec_params, y, distribution='Normal'):
     "compute likelihood function based on distribution of new dataset"
 
     if distribution == "Normal":
-        mu_obsv, var_obsv = obsv
+        mu_obsv, var_obsv = obsv_params
         f_dec_mean, f_dec_var = f_dec_params
 
         mu_obsv_tfm = f_dec_mean(mu_obsv)
@@ -15,12 +15,13 @@ def get_likelihood(obsv, f_dec_params, y, distribution='Normal'):
         log_like = torch.sum(Normal(loc=mu_obsv_tfm,
                                     scale=torch.sqrt(var_obsv_tfm)).log_prob(y), (-1, -2))
     elif distribution == "Poisson":
-        mu_obsv, var_obsv = obsv
+        rate = obsv_params
         f_dec_mean = f_dec_params
 
-        y_sample = mu_obsv + torch.sqrt(var_obsv) * torch.randn(mu_obsv.shape, device=mu_obsv.device)
+        y_tfm = f_dec_mean(rate)
 
-        log_like = torch.sum(Poisson(torch.exp(f_dec_mean(y_sample) )).log_prob(y), (-1,-2))
+        # log_like = torch.sum(Bernoulli(torch.sigmoid(y_tfm)).log_prob(y), (-1,-2))
+        log_like = torch.sum(Poisson(y_tfm).log_prob(y), (-1,-2))
 
     return log_like
 
@@ -52,10 +53,13 @@ def compute_alignment_loss(ref_vae,
         log_k_step_prior = log_k_step_prior + torch.sum(Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
 
     # get parameters from observation model
-    mu_obsv, var_obsv = ref_vae.decoder.compute_param(x_samples)
+    if distribution == "Normal":
+        obsv_params = ref_vae.decoder.compute_param(x_samples)
+    elif distribution == "Poisson":
+        obsv_params = ref_vae.decoder.compute_rate(x_samples)
 
     # transform parameters to new space using decoder
-    log_like = get_likelihood((mu_obsv, var_obsv), f_dec_params, y, distribution=distribution)
+    log_like = get_likelihood(obsv_params, f_dec_params, y, distribution=distribution)
 
     loss = torch.mean(log_like + log_k_step_prior)
     return -loss
@@ -66,7 +70,7 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                              K=40,
                              lr=1e-3,
                              distribution='Normal',
-                             linear_flag=False):
+                             linear_flag=True):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -80,6 +84,7 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                                 nn.Linear(128, dy_ref)]).to(ref_vae.device)
     else:
         f_enc = nn.Linear(dy, dy_ref).to(ref_vae.device)
+        torch.nn.init.normal_(f_enc.weight)
 
     f_dec_mean = nn.Linear(dy_ref, dy).to(ref_vae.device)
 
