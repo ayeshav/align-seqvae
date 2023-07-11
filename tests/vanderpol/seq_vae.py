@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal, Poisson
+from torch.distributions import Normal, Poisson, Bernoulli
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -132,18 +132,37 @@ class Decoder(nn.Module):
         return log_prob
 
 
-class DecoderPoisson(nn.Module):
+class PoissonDecoder(nn.Module):
     def __init__(self, dx, dy, device='cpu'):
         super().__init__()
         self.device = device
         self.decoder = nn.Sequential(nn.Linear(dx, dy)).to(device)
 
     def compute_param(self, x):
+        log_rates = self.decoder(x)
+        rates = torch.exp(log_rates)
         return self.decoder(x)
 
     def forward(self, samples, x):
-        lograte = self.compute_rate(samples)
-        log_prob = torch.sum(Poisson(torch.exp(lograte)).log_prob(x), (-1, -2))
+        rates = self.compute_rate(samples)
+        log_prob = torch.sum(Poisson(rates).log_prob(x), (-1, -2))
+        return log_prob
+
+
+class BernoulliDecoder(nn.Module):
+    def __init__(self, dx, dy, device='cpu'):
+        super(BernoulliDecoder, self).__init__()
+        self.device = device
+        self.decoder = nn.Linear(dx, dy).to(device)
+
+    def compute_param(self, x):
+        log_probs = self.decoder(x)
+        probs = torch.sigmoid(torch.clip(log_probs, -15, 15))
+        return probs
+
+    def _slow_forward(self, samples, x):
+        probs = self.compute_param(samples)
+        log_prob = torch.sum(Bernoulli(probs=probs).log_prob(x))
         return log_prob
 
 
@@ -160,7 +179,9 @@ class SeqVae(nn.Module):
         if likelihood == 'Normal':
             self.decoder = Decoder(dx, dy, device=device)
         elif likelihood == 'Poisson':
-            self.decoder = DecoderPoisson(dx, dy, device=device)
+            self.decoder = PoissonDecoder(dx, dy, device=device)
+        elif likelihood == 'Bernoulli':
+            self.decoder = BernoulliDecoder(dx, dy, device=device)
 
     def _prior(self, x_samples):
         """
