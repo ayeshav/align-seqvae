@@ -13,9 +13,9 @@ class Prior(nn.Module):
         self.dx = dx
         self.residual = residual
         self.prior = nn.Sequential(nn.Linear(dx, 256),
-                                   nn.ReLU(),
+                                   nn.Softplus(),
                                    nn.Linear(256, 256),
-                                   nn.ReLU(),
+                                   nn.Softplus(),
                                    nn.Linear(256, 2 * dx)).to(device)
         self.device = device
 
@@ -167,7 +167,7 @@ class BernoulliDecoder(nn.Module):
 
 
 class SeqVae(nn.Module):
-    def __init__(self, dx, dy, dh_e, likelihood='Normal', device='cpu'):
+    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', device='cpu'):
         super().__init__()
 
         self.dx = dx
@@ -176,12 +176,15 @@ class SeqVae(nn.Module):
         self.prior = Prior(dx, device=device)
         self.device = device
 
+        if dy_out is None:
+            dy_out=dy
+
         if likelihood == 'Normal':
-            self.decoder = Decoder(dx, dy, device=device)
+            self.decoder = Decoder(dx, dy_out, device=device)
         elif likelihood == 'Poisson':
-            self.decoder = PoissonDecoder(dx, dy, device=device)
+            self.decoder = PoissonDecoder(dx, dy_out, device=device)
         elif likelihood == 'Bernoulli':
-            self.decoder = BernoulliDecoder(dx, dy, device=device)
+            self.decoder = BernoulliDecoder(dx, dy_out, device=device)
 
     def _prior(self, x_samples):
         """
@@ -209,14 +212,14 @@ class SeqVae(nn.Module):
     #
     #     return log_prob
 
-    def forward(self, y, beta=1.):
+    def forward(self, y, inp_tfm=None, beta=1.):
         """
         In the forward method, we compute the negative elbo and return it back
         :param y: Y is a tensor of observations of size Batch by Time by Dy
         :return:
         """
         # pass data through encoder and get mean, variance, samples and log density
-        x_samples, mu, var, log_q = self.encoder(y)
+        x_samples, mu, var, log_q = self.encoder(inp_tfm(y))
 
         # given samples, compute the log prior
         log_prior = self._prior(x_samples)
