@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from seq_vae import SeqVae
 from tqdm import tqdm
 
@@ -43,7 +44,19 @@ class SeqDataLoader:
         return self.n_batches
 
 
-def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4):
+class Mlp(nn.Module):
+    def __init__(self, dx, dy, dh):
+        super().__init__()
+
+        self.net = nn.Sequential(*[nn.Linear(dx, dh), nn.Softplus(),
+                                   nn.Linear(dh, dh), nn.Softplus(),
+                                   nn.Linear(dh, dy)])
+
+    def forward(self, x):
+        return self.net(x)
+
+
+def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4, inp_tfm=None):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -56,12 +69,18 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     assert isinstance(vae, SeqVae)
     assert train_dataloader.shuffle
     assert isinstance(train_dataloader, SeqDataLoader)
-    opt = torch.optim.AdamW(params=vae.parameters(), lr=lr, weight_decay=weight_decay)
+
+    if inp_tfm is not None:
+        param_list = list(vae.parameters()) + list(inp_tfm.parameters())
+    else:
+        param_list = list(vae.parameters())
+
+    opt = torch.optim.AdamW(params=param_list, lr=lr, weight_decay=weight_decay)
     training_losses = []
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device))
+            loss = vae(y.to(vae.device), inp_tfm=inp_tfm)
             loss.backward()
             opt.step()
 
