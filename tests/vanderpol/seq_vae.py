@@ -138,12 +138,12 @@ class DecoderPoisson(nn.Module):
         self.device = device
         self.decoder = nn.Sequential(nn.Linear(dx, dy)).to(device)
 
-    def compute_rate(self, x):
-        return torch.exp(self.decoder(x))
+    def compute_param(self, x):
+        return self.decoder(x)
 
     def forward(self, samples, x):
-        rate = self.compute_rate(samples)
-        log_prob = torch.sum(Poisson(rate).log_prob(x), (-1, -2))
+        lograte = self.compute_rate(samples)
+        log_prob = torch.sum(Poisson(torch.exp(lograte)).log_prob(x), (-1, -2))
         return log_prob
 
 
