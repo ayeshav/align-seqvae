@@ -218,8 +218,12 @@ class SeqVae(nn.Module):
         :param y: Y is a tensor of observations of size Batch by Time by Dy
         :return:
         """
+        if inp_tfm is None:
+            y_enc = y
+        else:
+            y_enc = inp_tfm(y)
         # pass data through encoder and get mean, variance, samples and log density
-        x_samples, mu, var, log_q = self.encoder(inp_tfm(y))
+        x_samples, mu, var, log_q = self.encoder(y_enc)
 
         # given samples, compute the log prior
         log_prior = self._prior(x_samples)
