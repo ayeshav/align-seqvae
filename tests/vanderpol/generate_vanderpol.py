@@ -54,7 +54,9 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         xs = np.vstack([x[k] for k in range(K)])
         mu = np.mean(xs, 0, keepdims=True)
         sigma = np.std(xs, 0, keepdims=True)
-
+        C = 2 * npr.rand(2, dy) - 1
+        # b = np.zeros((1, dy))
+        b = npr.rand(1, dy) - 0.5
         x_normalized = (x - mu) / sigma  # should broadcast correctly
 
         log_rates = x_normalized @ C + b
