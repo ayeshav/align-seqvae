@@ -72,7 +72,7 @@ T = 300  # length of time series
 if noise_type == 'gaussian':
     dys = [30, 30, 40, 50]
 elif noise_type == 'bernoulli' or noise_type == 'poisson':
-    dys = [100, 100, 150, 200]
+    dys = [200, 200, 250, 300]
 
 dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
