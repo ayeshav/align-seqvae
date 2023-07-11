@@ -48,26 +48,39 @@ def noisy_vanderpol(T, t_eval, params, x0):
     return x
 
 
-def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2):
+def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='poisson'):
     x = np.empty((K, T, 2))
-    y = np.empty((K, T, dy))
+    y = torch.empty((K, T, dy))
 
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
 
+    C = torch.randn((dy, 2), dtype=torch.float64)
+    C = (1 / np.sqrt(2)) * (C / torch.norm(C, dim=1).unsqueeze(1))
+
+    b = torch.log(5 + 10 * torch.rand(dy, dtype=torch.float64))
+
     # generate initial conditions
     x[:, 0] = 6 * npr.rand(K, 2) - 3
-    y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
+
+    if noise_type == 'gaussian':
+        y[:, 0] = x[:, 0] @ C.T + sigma_y * npr.randn(K, dy)
+    elif noise_type == 'poisson':
+        y[:, 0] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, 0]) @ C.T + b.unsqueeze(0)))
 
     # propagate time series
     for t in range(1, T):
         vel = np.empty((K, 2))
-        vel[:, 0] = mu * (x[:, t -1, 0] - x[:, t - 1, 0] ** 3 / 3 - x[:, t - 1, 1])
+        vel[:, 0] = mu * (x[:, t - 1, 0] - x[:, t - 1, 0] ** 3 / 3 - x[:, t - 1, 1])
         vel[:, 1] = x[:, t - 1, 0] / mu
 
         x[:, t] = x[:, t - 1] + dt * (vel + sigma_x * npr.randn(K, 2))
-        y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
-    return x, y, C
+
+        if noise_type == 'gaussian':
+            y[:, t] = x[:, t] @ C.T + sigma_y * npr.randn(K, dy)
+        elif noise_type == 'poisson':
+            y[:, t] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, t]) @ C.T + b.unsqueeze(0)))
+    return x, y, C, b
 
 
 # "params for vdp"
@@ -96,15 +109,15 @@ dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
 
 
-
 data_all = []
 
 for dy in dys:
-    x, y, C = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
-    data =  {}
+    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
+    data = {}
     data['x'] = torch.from_numpy(x)
-    data['y'] = torch.from_numpy(y)
+    data['y'] = y
     data['C'] = C
+    data['b'] = b
 
     data_all.append(data)
 
@@ -118,29 +131,10 @@ for k in range(K):
 fig.show()
 
 
-# x = np.empty((K, T, dx))
-# for j in range(len(N)):
-#
-#     data = {}
-#
-#     x0 = 6 * npr.rand(K, dx) - 3
-#
-#     C = np.random.randn(dx, N[j]) / np.sqrt(dx)
-#     y = np.empty((K, T, N[j]))
-#
-#     for i in range(K):
-#         x[i] = noisy_vanderpol(T+1, t_eval, params, x0[i])[1:]
-#         y[i] = x[i]@C + np.expand_dims(np.random.randn(N[j]),0)*Q
-#
-#     data['x'] = torch.from_numpy(x)
-#     data['y'] = torch.from_numpy(y)
-#     data['C'] = C
-#
-#     data_all.append(data)
 
 data_path = 'data'
-print(torch.sum(torch.isnan(torch.from_numpy(y))))
+print(torch.sum(torch.isnan(y)))
 if not os.path.isdir(data_path):
     os.makedirs(data_path)
 
-torch.save(data_all, 'data/noisy_vanderpol.pt')
+torch.save(data_all, 'data/noisy_vanderpol_poisson.pt')
