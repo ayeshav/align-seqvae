@@ -160,7 +160,7 @@ class BernoulliDecoder(nn.Module):
         probs = torch.sigmoid(torch.clip(log_probs, -15, 15))
         return probs
 
-    def _slow_forward(self, samples, x):
+    def forward(self, samples, x):
         probs = self.compute_param(samples)
         log_prob = torch.sum(Bernoulli(probs=probs).log_prob(x))
         return log_prob
