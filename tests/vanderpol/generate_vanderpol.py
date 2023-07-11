@@ -23,10 +23,6 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
     b = 2 * npr.rand(1, dy) - 1
-    # C = torch.randn((dy, 2), dtype=torch.float64)
-    # C = (1 / np.sqrt(2)) * (C / torch.norm(C, dim=1).unsqueeze(1))
-    #
-    # b = torch.log(5 + 10 * torch.rand(dy, dtype=torch.float64))
 
     # generate initial conditions
     x[:, 0] = 6 * npr.rand(K, 2) - 3
@@ -35,12 +31,10 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
     elif noise_type == 'poisson':
         log_rates = x[:, 0] @ C + b
-        # y[:, 0] = npr.poisson(np.exp(log_rates))
         y[:, 0] = npr.poisson(softplus(log_rates))
-        # y[:, 0] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, 0]) @ C.T + b.unsqueeze(0)))
-    elif noise_type == 'bernoulli':
-        log_rates = x[:, 0] @ C + b
-        y[:, 0] = npr.binomial(1, sigmoid(log_rates))
+    # elif noise_type == 'bernoulli':
+    #     log_rates = x[:, 0] @ C + b
+    #     y[:, 0] = npr.binomial(1, sigmoid(log_rates))
 
     # propagate time series
     for t in range(1, T):
@@ -52,14 +46,19 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
 
         if noise_type == 'gaussian':
             y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
-        else:
+        elif noise_type == 'poisson':
             log_rates = x[:, t] @ C + b
-            y[:, t] = npr.poisson(softplus(log_rates)) if noise_type == 'poisson' else npr.binomial(1, sigmoid(log_rates))
-        # elif noise_type == 'bernoulli':
-        #     log_rates = x[:, t] @ C + b
-        #     y[:, t] = npr.binomial(1, sigmoid(log_rates))
-        # elif noise_type == 'poisson':
-        #     y[:, t] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, t]) @ C.T + b.unsqueeze(0)))
+            y[:, t] = npr.poisson(softplus(log_rates))
+
+    if noise_type == 'bernoulli':
+        xs = np.vstack([x[k] for k in range(K)])
+        mu = np.mean(xs, 0, keepdims=True)
+        sigma = np.std(xs, 0, keepdims=True)
+
+        x_normalized = (x - mu) / sigma  # should broadcast correctly
+
+        log_rates = x_normalized @ C + b
+        y = npr.binomial(1, sigmoid(log_rates))
     return x, y, C, b
 
 sigma_x = 0.5  # state noise
