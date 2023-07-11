@@ -2,6 +2,7 @@ import numpy as np
 import numpy.random as npr
 import torch
 import os
+from tqdm import tqdm
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
 
@@ -9,26 +10,37 @@ torch.manual_seed(42)
 torch.random.manual_seed(42)
 npr.seed(0)
 
+noise_type = 'bernoulli'
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+softplus = lambda z: np.log(1 + np.exp(z))
+
 
 def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='poisson'):
     x = np.empty((K, T, 2))
-    y = torch.empty((K, T, dy))
+    y = np.empty((K, T, dy))
+    # y = torch.empty((K, T, dy))
 
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
-
-    C = torch.randn((dy, 2), dtype=torch.float64)
-    C = (1 / np.sqrt(2)) * (C / torch.norm(C, dim=1).unsqueeze(1))
-
-    b = torch.log(5 + 10 * torch.rand(dy, dtype=torch.float64))
+    b = 2 * npr.rand(1, dy) - 1
+    # C = torch.randn((dy, 2), dtype=torch.float64)
+    # C = (1 / np.sqrt(2)) * (C / torch.norm(C, dim=1).unsqueeze(1))
+    #
+    # b = torch.log(5 + 10 * torch.rand(dy, dtype=torch.float64))
 
     # generate initial conditions
     x[:, 0] = 6 * npr.rand(K, 2) - 3
 
     if noise_type == 'gaussian':
-        y[:, 0] = x[:, 0] @ C.T + sigma_y * npr.randn(K, dy)
+        y[:, 0] = x[:, 0] @ C + sigma_y * npr.randn(K, dy)
     elif noise_type == 'poisson':
-        y[:, 0] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, 0]) @ C.T + b.unsqueeze(0)))
+        log_rates = x[:, 0] @ C + b
+        # y[:, 0] = npr.poisson(np.exp(log_rates))
+        y[:, 0] = npr.poisson(softplus(log_rates))
+        # y[:, 0] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, 0]) @ C.T + b.unsqueeze(0)))
+    elif noise_type == 'bernoulli':
+        log_rates = x[:, 0] @ C + b
+        y[:, 0] = npr.binomial(1, sigmoid(log_rates))
 
     # propagate time series
     for t in range(1, T):
@@ -39,9 +51,15 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         x[:, t] = x[:, t - 1] + dt * (vel + sigma_x * npr.randn(K, 2))
 
         if noise_type == 'gaussian':
-            y[:, t] = x[:, t] @ C.T + sigma_y * npr.randn(K, dy)
-        elif noise_type == 'poisson':
-            y[:, t] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, t]) @ C.T + b.unsqueeze(0)))
+            y[:, t] = x[:, t] @ C + sigma_y * npr.randn(K, dy)
+        else:
+            log_rates = x[:, t] @ C + b
+            y[:, t] = npr.poisson(softplus(log_rates)) if noise_type == 'poisson' else npr.binomial(1, sigmoid(log_rates))
+        # elif noise_type == 'bernoulli':
+        #     log_rates = x[:, t] @ C + b
+        #     y[:, t] = npr.binomial(1, sigmoid(log_rates))
+        # elif noise_type == 'poisson':
+        #     y[:, t] = torch.poisson(dt * torch.exp(torch.from_numpy(x[:, t]) @ C.T + b.unsqueeze(0)))
     return x, y, C, b
 
 sigma_x = 0.5  # state noise
@@ -52,7 +70,10 @@ K = 1_000  # number of batches
 T = 300  # length of time series
 
 "different number of observations for sessions/animals"
-dys = [30, 30, 40, 50]
+if noise_type == 'gaussian':
+    dys = [30, 30, 40, 50]
+elif noise_type == 'bernoulli' or noise_type == 'poisson':
+    dys = [100, 100, 150, 200]
 
 dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
@@ -60,30 +81,31 @@ t_eval = np.arange(0, (T+1) * dt, dt)
 
 data_all = []
 
-for dy in dys:
-    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt)
+for dy in tqdm(dys):
+    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt, noise_type=noise_type)
     data = {}
-    data['x'] = torch.from_numpy(x)
-    data['y'] = y
-    data['C'] = C
-    data['b'] = b
+    data['x'] = torch.from_numpy(x).float()
+    data['y'] = torch.from_numpy(y).float()
+    data['C'] = torch.from_numpy(C).float()
+    data['b'] = torch.from_numpy(b).float()
 
     data_all.append(data)
 
 # In[]
-fig, axs = plt.subplots(1, 2, figsize=(12, 6), dpi=100)
-
-for k in range(K):
-    axs[0].plot(data_all[0]['x'][k, :, 0], data_all[0]['x'][k, :, 1], alpha=0.3)
-    for d in range(30):
-        axs[1].plot(data_all[0]['y'][0, :, d], alpha=0.3)
-fig.show()
-
+# fig, axs = plt.subplots(1, 2, figsize=(12, 6), dpi=100)
+#
+# # for k in range(K):
+# #     axs[0].plot(data_all[0]['x'][k, :, 0], data_all[0]['x'][k, :, 1], alpha=0.3)
+# #     for d in range(30):
+# #         axs[1].plot(data_all[0]['y'][0, :, d], alpha=0.3)
+# # fig.show()
 
 
 data_path = 'data'
-print(torch.sum(torch.isnan(y)))
+print(torch.sum(torch.isnan(torch.from_numpy(x))),
+      torch.sum(torch.isnan(torch.from_numpy(y))),
+      torch.max(torch.from_numpy(y)))
 if not os.path.isdir(data_path):
     os.makedirs(data_path)
 
-torch.save(data_all, 'data/noisy_vanderpol_poisson.pt')
+torch.save(data_all, f'data/noisy_vanderpol_{noise_type}.pt')
