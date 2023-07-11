@@ -45,12 +45,12 @@ class SeqDataLoader:
 
 
 class Mlp(nn.Module):
-    def __init__(self, dx, dy, dh):
+    def __init__(self, dx, dy, dh, device='cpu'):
         super().__init__()
 
         self.net = nn.Sequential(*[nn.Linear(dx, dh), nn.Softplus(),
                                    nn.Linear(dh, dh), nn.Softplus(),
-                                   nn.Linear(dh, dy)])
+                                   nn.Linear(dh, dy)]).to(device)
 
     def forward(self, x):
         return self.net(x)
