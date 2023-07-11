@@ -140,8 +140,8 @@ class PoissonDecoder(nn.Module):
 
     def compute_param(self, x):
         log_rates = self.decoder(x)
-        rates = torch.exp(log_rates)
-        return self.decoder(x)
+        rates = torch.nn.functional.softplus(log_rates)
+        return rates
 
     def forward(self, samples, x):
         rates = self.compute_rate(samples)
