@@ -56,7 +56,8 @@ class Mlp(nn.Module):
         return self.net(x)
 
 
-def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4, inp_tfm=None):
+def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
+                 weight_decay=1e-4, n_samples=1, inp_tfm=None):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -80,7 +81,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4, weight_decay=1e-4
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device), inp_tfm=inp_tfm)
+            loss = vae(y.to(vae.device), n_samples=n_samples, inp_tfm=inp_tfm)
             loss.backward()
             opt.step()
 

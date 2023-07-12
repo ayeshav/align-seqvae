@@ -33,14 +33,20 @@ class Prior(nn.Module):
             mu = mu + x
         return mu, var
 
-    def forward(self, x):
+    def forward(self, x_prev, x):
         """
         Given data, we compute the log-density of the time series
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        mu, var = self.compute_param(x[:, :-1])
-        log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, 1:]), (-2, -1))
+        # if len(x.shape) > 3:
+        #     mu, var = self.compute_param(x[:, :, :-1])
+        #     log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, :, 1:]), (-2, -1))
+        # else:
+        #     mu, var = self.compute_param(x[:, :-1])
+        #     log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, 1:]), (-2, -1))
+        mu, var = self.compute_param(x_prev)
+        log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x), (-2, -1))
         return log_prob
 
     def sample_k_step_ahead(self, x, K, keep_trajectory=False):
@@ -63,11 +69,12 @@ class Prior(nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, dy, dx, dh, device='cpu'):
+    def __init__(self, dy, dx, dh, prior_func=None, device='cpu'):
         super().__init__()
 
         self.dh = dh
         self.dx = dx
+        self.prior_func = prior_func
 
         # GRU expects batch to be the first dimension
         self.gru = nn.GRU(input_size=dy, hidden_size=dh, bidirectional=True).to(device)
@@ -87,26 +94,35 @@ class Encoder(nn.Module):
 
         mu, logvar = torch.split(out, [self.dx, self.dx], -1)
         var = Softplus(logvar) + eps
+
+        if self.prior_func is not None:
+            # pass mean through dynamics to get its parameters
+            mu_prior, var_prior = self.prior_func(mu)
+
+            # combine
+            tau = 1 / (1 / var + 1 / var_prior)
+            mu_updated = tau * (mu / var + mu_prior / var_prior)
+            mu = mu_updated
+            var = tau
         return mu, var
 
-    def sample(self, x):
+    def sample(self, x, n_samples=1):
         """
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
         mu, var = self.compute_param(x)
-        samples = mu + torch.sqrt(var) * torch.randn(mu.shape, device=self.device)
-        return samples, mu, var
+        samples = mu + torch.sqrt(var) * torch.randn([n_samples] + list(mu.shape), device=self.device)
+        return samples.squeeze(0), mu, var
 
-    def forward(self, x):
+    def forward(self, x, n_samples=1):
         """
         Given a batch of time series, sample and compute the log density
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-
         # compute parameters and sample
-        samples, mu, var = self.sample(x)
+        samples, mu, var = self.sample(x, n_samples=n_samples)
         log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(samples), (-2, -1))
         return samples, mu, var, log_prob
 
@@ -167,13 +183,14 @@ class BernoulliDecoder(nn.Module):
 
 
 class SeqVae(nn.Module):
-    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', device='cpu'):
+    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', fancy=True, device='cpu'):
         super().__init__()
 
         self.dx = dx
 
-        self.encoder = Encoder(dy, dx, dh_e, device=device)
         self.prior = Prior(dx, device=device)
+        self.encoder = Encoder(dy, dx, dh_e, device=device,
+                               prior_func=self.prior.compute_param if fancy else None)
         self.device = device
 
         if dy_out is None:
@@ -192,9 +209,14 @@ class SeqVae(nn.Module):
         :param x_samples: A tensor of latent samples of dimension Batch by Time by Dy
         :return:
         """
-        log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
-                                     torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
-        log_prior = log_prior + self.prior(x_samples)
+        if len(x_samples.shape) > 3:
+            log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                         torch.ones(1, device=self.device)).log_prob(x_samples[:, :, 0]), -1)
+            log_prior = log_prior + self.prior(x_samples[:, :, :-1], x_samples[:, :, 1:])
+        else:
+            log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                         torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
+            log_prior = log_prior + self.prior(x_samples[:, :-1], x_samples[:, 1:])
         return log_prior
 
     # def compute_k_step_pred(self, x, k):
@@ -212,7 +234,7 @@ class SeqVae(nn.Module):
     #
     #     return log_prob
 
-    def forward(self, y, inp_tfm=None, beta=1.):
+    def forward(self, y, inp_tfm=None, beta=1., n_samples=1):
         """
         In the forward method, we compute the negative elbo and return it back
         :param y: Y is a tensor of observations of size Batch by Time by Dy
@@ -223,7 +245,7 @@ class SeqVae(nn.Module):
         else:
             y_enc = inp_tfm(y)
         # pass data through encoder and get mean, variance, samples and log density
-        x_samples, mu, var, log_q = self.encoder(y_enc)
+        x_samples, mu, var, log_q = self.encoder(y_enc, n_samples=n_samples)
 
         # given samples, compute the log prior
         log_prior = self._prior(x_samples)
@@ -232,5 +254,5 @@ class SeqVae(nn.Module):
         log_like = self.decoder(x_samples, y)
 
         # compute the elbo
-        elbo = torch.mean(beta*log_like + (log_prior - log_q))
+        elbo = torch.mean(log_like + beta * (log_prior - log_q))
         return -elbo
