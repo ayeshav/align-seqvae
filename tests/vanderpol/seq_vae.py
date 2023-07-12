@@ -7,16 +7,24 @@ eps = 1e-6
 
 
 class Prior(nn.Module):
-    def __init__(self, dx, residual=True, device='cpu'):
+    def __init__(self, dx, residual=True, fixed_variance=True, device='cpu'):
         super().__init__()
 
         self.dx = dx
         self.residual = residual
+        self.fixed_variance = fixed_variance
+
+        if fixed_variance:
+            self.logvar = nn.Parameter(0.01 * torch.randn(1, dx, device=device), requires_grad=True)
+            d_out = dx
+        else:
+            d_out = 2 * dx
+
         self.prior = nn.Sequential(nn.Linear(dx, 256),
                                    nn.Softplus(),
                                    nn.Linear(256, 256),
                                    nn.Softplus(),
-                                   nn.Linear(256, 2 * dx)).to(device)
+                                   nn.Linear(256, d_out)).to(device)
         self.device = device
 
     def compute_param(self, x):
@@ -26,8 +34,13 @@ class Prior(nn.Module):
         """
         assert x.shape[-1] == self.dx
         out = self.prior(x)
-        mu, logvar = torch.split(out, [self.dx, self.dx], -1)
-        var = Softplus(logvar) + eps
+
+        if self.fixed_variance:
+            mu = out
+            var = Softplus(self.logvar) + eps
+        else:
+            mu, logvar = torch.split(out, [self.dx, self.dx], -1)
+            var = Softplus(logvar) + eps
 
         if self.residual:
             mu = mu + x
@@ -183,12 +196,12 @@ class BernoulliDecoder(nn.Module):
 
 
 class SeqVae(nn.Module):
-    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', fancy=True, device='cpu'):
+    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', fixed_variance=True, fancy=True, device='cpu'):
         super().__init__()
 
         self.dx = dx
 
-        self.prior = Prior(dx, device=device)
+        self.prior = Prior(dx, fixed_variance=fixed_variance, device=device)
         self.encoder = Encoder(dy, dx, dh_e, device=device,
                                prior_func=self.prior.compute_param if fancy else None)
         self.device = device
