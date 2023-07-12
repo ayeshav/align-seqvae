@@ -51,21 +51,15 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
             y[:, t] = npr.poisson(softplus(log_rates))
 
     if noise_type == 'bernoulli':
-        xs = np.vstack([x[k] for k in range(K)])
-        mu = np.mean(xs, 0, keepdims=True)
-        sigma = np.std(xs, 0, keepdims=True)
         C = 2 * npr.rand(2, dy) - 1
-        # b = np.zeros((1, dy))
         b = npr.rand(1, dy) - 0.5
-        x_normalized = (x - mu) / sigma  # should broadcast correctly
-
-        log_rates = x_normalized @ C + b
+        log_rates = x @ C + b
         y = npr.binomial(1, sigmoid(log_rates))
     return x, y, C, b
 
 sigma_x = 0.5  # state noise
 sigma_y = 0.1  # observation noise
-dt = 1e-2  # euler integration time step
+dt = 1e-1  # euler integration time step
 mu = 1.5
 K = 1_000  # number of batches
 T = 300  # length of time series
