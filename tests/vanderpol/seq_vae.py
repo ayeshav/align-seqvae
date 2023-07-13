@@ -21,9 +21,11 @@ class Prior(nn.Module):
             d_out = 2 * dx
 
         self.prior = nn.Sequential(nn.Linear(dx, 256),
-                                   nn.Softplus(),
+                                   # nn.Softplus(),
+                                   nn.Tanh(),
                                    nn.Linear(256, 256),
-                                   nn.Softplus(),
+                                   # nn.Softplus(),
+                                   nn.Tanh(),
                                    nn.Linear(256, d_out)).to(device)
         self.device = device
 
@@ -52,12 +54,6 @@ class Prior(nn.Module):
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        # if len(x.shape) > 3:
-        #     mu, var = self.compute_param(x[:, :, :-1])
-        #     log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, :, 1:]), (-2, -1))
-        # else:
-        #     mu, var = self.compute_param(x[:, :-1])
-        #     log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x[:, 1:]), (-2, -1))
         mu, var = self.compute_param(x_prev)
         log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x), (-2, -1))
         return log_prob
@@ -90,7 +86,8 @@ class Encoder(nn.Module):
         self.prior_func = prior_func
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=dy, hidden_size=dh, bidirectional=True).to(device)
+        self.gru = nn.GRU(input_size=32 if self.featurize else dy,
+                          hidden_size=dh, bidirectional=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
@@ -99,7 +96,7 @@ class Encoder(nn.Module):
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        h, _ = self.gru(x)
+        h, _ = self.gru(self.featurizer(x) if self.featurize else x)
 
         h = h.view(x.shape[0], x.shape[1], 2, self.dh)
         h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
@@ -127,6 +124,86 @@ class Encoder(nn.Module):
         mu, var = self.compute_param(x)
         samples = mu + torch.sqrt(var) * torch.randn([n_samples] + list(mu.shape), device=self.device)
         return samples.squeeze(0), mu, var
+
+    def forward(self, x, n_samples=1):
+        """
+        Given a batch of time series, sample and compute the log density
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        # compute parameters and sample
+        samples, mu, var = self.sample(x, n_samples=n_samples)
+        log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(samples), (-2, -1))
+        return samples, mu, var, log_prob
+
+#################################################################
+#################################################################
+#################################################################
+#################################################################
+#################################################################
+#################################################################
+
+
+class EncoderV2(nn.Module):
+    def __init__(self, dy, dx, dh, device='cpu'):
+        super().__init__()
+
+        self.dh = dh
+        self.dx = dx
+
+        # GRU expects batch to be the first dimension
+        self.gru = nn.GRU(input_size=dy, hidden_size=dh, bidirectional=True).to(device)
+        self.readout = nn.Sequential(*[nn.Linear(2 * dh + dx, 128),
+                                       nn.ReLU(),
+                                       nn.Linear(128, 128),
+                                       nn.ReLU(),
+                                       nn.Linear(128, 2 * dx)
+                                       ]).to(device)
+        self.device = device
+
+    def compute_param(self, x):
+        """
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        h, _ = self.gru(x)
+        h = h.view(x.shape[0], x.shape[1], 2, self.dh)
+        h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
+        return h_cat
+
+    def sample(self, x, n_samples=1):
+        """
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        B, T, _ = x.shape
+        h = self.compute_param(x)
+        samples = []
+        means = []
+        vars = []
+
+        for t in range(T):
+            if t == 0:
+                temp = torch.cat((h[:, t], torch.zeros(B, self.dx, device=self.device)), -1)
+            else:
+                temp = torch.cat((h[:, t].unsqueeze(0).repeat(n_samples, 1, 1), samples[-1]), -1) # number of samples by Batch by dimension
+
+            out = self.readout(temp)
+            mu, logvar = torch.split(out, [self.dx, self.dx], -1)
+            var = Softplus(logvar) + eps
+
+            if t == 0:
+                means.append(mu.unsqueeze(0).repeat(n_samples, 1, 1))
+                vars.append(var.unsqueeze(0).repeat(n_samples, 1, 1))
+            else:
+                means.append(mu)
+                vars.append(var)
+
+            samples.append(mu + torch.sqrt(var) * torch.randn(n_samples, B,  self.dx, device=self.device))
+        samples = torch.stack(samples, dim=2)  # n_samples by Batch by Time by dimension
+        mus = torch.stack(means, dim=2)  # n_samples by Batch by Time by dimension
+        vars = torch.stack(vars, dim=2)
+        return samples.squeeze(0), mus.squeeze(0), vars.squeeze(0)
 
     def forward(self, x, n_samples=1):
         """
@@ -196,7 +273,8 @@ class BernoulliDecoder(nn.Module):
 
 
 class SeqVae(nn.Module):
-    def __init__(self, dx, dy, dh_e, dy_out=None, likelihood='Bernoulli', fixed_variance=True, fancy=True, device='cpu'):
+    def __init__(self, dx, dy, dh_e, dy_out=None,
+                 likelihood='Bernoulli', fixed_variance=True, fancy=True, device='cpu'):
         super().__init__()
 
         self.dx = dx
@@ -204,10 +282,11 @@ class SeqVae(nn.Module):
         self.prior = Prior(dx, fixed_variance=fixed_variance, device=device)
         self.encoder = Encoder(dy, dx, dh_e, device=device,
                                prior_func=self.prior.compute_param if fancy else None)
+        # self.encoder = EncoderV2(dy, dx, dh_e, device=device)
         self.device = device
 
         if dy_out is None:
-            dy_out=dy
+            dy_out = dy
 
         if likelihood == 'Normal':
             self.decoder = Decoder(dx, dy_out, device=device)
