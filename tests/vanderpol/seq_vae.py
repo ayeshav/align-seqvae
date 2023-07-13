@@ -77,6 +77,43 @@ class Prior(nn.Module):
             return x_trajectory[-1], means[-1], vars[-1]
 
 
+class PriorVanderPol(nn.Module):
+    def __init__(self, device='cuda'):
+        super().__init__()
+        self.dt = 0.1 * torch.ones(1, device=device)
+        self.var = (self.dt * 0.5) ** 2 * torch.ones(1, device=device)
+        self.mu = 1.5 * torch.ones(1, device=device)
+
+    def compute_velocity(self, x):
+        if len(x.shape == 3):
+            vel_x = self.mu * (x[:, :, 0] - x[:, :, 0] ** 3 / 3 - x[:, :, 1])
+            vel_y = x[:, :, 0] / self.mu
+        else:
+            vel_x = self.mu * (x[:, , :, 0] - x[:, :, :, 0] ** 3 / 3 - x[:, :, :, 1])
+            vel_y = x[:, :, :, 0] / self.mu
+        return self.dt * torch.cat((vel_x, vel_y), -1)
+
+    def compute_param(self, x):
+        """
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        assert x.shape[-1] == self.dx
+        mu = x + self.compute_velocity(x)
+        var = self.var
+        return mu, var
+
+    def forward(self, x_prev, x):
+        """
+        Given data, we compute the log-density of the time series
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        mu, var = self.compute_param(x_prev)
+        log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x), (-2, -1))
+        return log_prob
+
+
 class Encoder(nn.Module):
     def __init__(self, dy, dx, dh, prior_func=None, device='cpu'):
         super().__init__()
