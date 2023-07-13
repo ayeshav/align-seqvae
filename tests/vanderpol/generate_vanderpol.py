@@ -52,9 +52,8 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
 
     if noise_type == 'bernoulli':
         C = 2 * npr.rand(2, dy) - 1
-        # b = npr.rand(1, dy) - 0.5
         b = np.zeros((1, dy))
-        log_rates = 3 * (x @ C + b)
+        log_rates = x @ C + b
         y = npr.binomial(1, sigmoid(log_rates))
     return x, y, C, b
 
