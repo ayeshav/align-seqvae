@@ -18,7 +18,6 @@ softplus = lambda z: np.log(1 + np.exp(z))
 def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='poisson'):
     x = np.empty((K, T, 2))
     y = np.empty((K, T, dy))
-    # y = torch.empty((K, T, dy))
 
     # generate random readout
     C = npr.randn(2, dy) / np.sqrt(2)
@@ -32,9 +31,12 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
     elif noise_type == 'poisson':
         log_rates = x[:, 0] @ C + b
         y[:, 0] = npr.poisson(softplus(log_rates))
-    # elif noise_type == 'bernoulli':
-    #     log_rates = x[:, 0] @ C + b
-    #     y[:, 0] = npr.binomial(1, sigmoid(log_rates))
+    elif noise_type == 'bernoulli':
+        C = 10 * npr.rand(2, dy) - 5
+        b = 5 * npr.randn(1, dy)
+
+        log_rates = x[:, 0] @ C + b
+        y[:, 0] = npr.binomial(1, sigmoid(log_rates))
 
     # propagate time series
     for t in range(1, T):
@@ -49,12 +51,10 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         elif noise_type == 'poisson':
             log_rates = x[:, t] @ C + b
             y[:, t] = npr.poisson(softplus(log_rates))
+        elif noise_type == 'bernoulli':
+            log_rates = x[:, t] @ C + b
+            y[:, t] = npr.binomial(1, sigmoid(log_rates))
 
-    if noise_type == 'bernoulli':
-        C = 2 * npr.rand(2, dy) - 1
-        b = np.zeros((1, dy))
-        log_rates = x @ C + b
-        y = npr.binomial(1, sigmoid(log_rates))
     return x, y, C, b
 
 sigma_x = 0.5  # state noise
