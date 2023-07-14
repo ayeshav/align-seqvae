@@ -85,20 +85,19 @@ class PriorVanderPol(nn.Module):
         self.mu = 1.5 * torch.ones(1, device=device)
 
     def compute_velocity(self, x):
-        if len(x.shape == 3):
+        if len(x.shape) == 3:
             vel_x = self.mu * (x[:, :, 0] - x[:, :, 0] ** 3 / 3 - x[:, :, 1])
             vel_y = x[:, :, 0] / self.mu
         else:
-            vel_x = self.mu * (x[:, , :, 0] - x[:, :, :, 0] ** 3 / 3 - x[:, :, :, 1])
+            vel_x = self.mu * (x[:, :, :, 0] - x[:, :, :, 0] ** 3 / 3 - x[:, :, :, 1])
             vel_y = x[:, :, :, 0] / self.mu
-        return self.dt * torch.cat((vel_x, vel_y), -1)
+        return self.dt * torch.stack((vel_x, vel_y), -1)
 
     def compute_param(self, x):
         """
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        assert x.shape[-1] == self.dx
         mu = x + self.compute_velocity(x)
         var = self.var
         return mu, var
@@ -123,7 +122,7 @@ class Encoder(nn.Module):
         self.prior_func = prior_func
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=32 if self.featurize else dy,
+        self.gru = nn.GRU(input_size=dy,
                           hidden_size=dh, bidirectional=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
@@ -133,7 +132,7 @@ class Encoder(nn.Module):
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        h, _ = self.gru(self.featurizer(x) if self.featurize else x)
+        h, _ = self.gru(x)
 
         h = h.view(x.shape[0], x.shape[1], 2, self.dh)
         h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
@@ -190,12 +189,7 @@ class EncoderV2(nn.Module):
 
         # GRU expects batch to be the first dimension
         self.gru = nn.GRU(input_size=dy, hidden_size=dh, bidirectional=True).to(device)
-        self.readout = nn.Sequential(*[nn.Linear(2 * dh + dx, 128),
-                                       nn.ReLU(),
-                                       nn.Linear(128, 128),
-                                       nn.ReLU(),
-                                       nn.Linear(128, 2 * dx)
-                                       ]).to(device)
+        self.readout = nn.Linear(2 * dh + dx, 2 * dx).to(device)
         self.device = device
 
     def compute_param(self, x):
