@@ -86,7 +86,7 @@ class PriorVanderPol(nn.Module):
 
     def compute_velocity(self, x):
         if len(x.shape) == 2:
-            vel_x = self.mu * (x[:, 0] - x[:, 0] ** 3 / 3 - x[:, :1])
+            vel_x = self.mu * (x[:, 0] - x[:, 0] ** 3 / 3 - x[:, 1])
             vel_y = x[:, 0] / self.mu
         elif len(x.shape) == 3:
             vel_x = self.mu * (x[:, :, 0] - x[:, :, 0] ** 3 / 3 - x[:, :, 1])
@@ -380,20 +380,6 @@ class SeqVae(nn.Module):
                         Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
         return log_prior
 
-    # def compute_k_step_pred(self, x, k):
-    #     # TODO: we will use this for training the SeqVae when using multiple animals so keep like this and will edit later
-    #     x_unfold = torch.Tensor.unfold(x, 1, k+1, 1)
-    #     mu, var = self.prior.compute_param(x_unfold[..., 0])
-    #
-    #     log_prob = 0
-    #
-    #     for i in range(k):
-    #         log_prob = log_prob + torch.mean(torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_unfold[:, ..., i + 1]), (-2, -1)))
-    #
-    #         x_samples_next = mu + torch.sqrt(var) * torch.randn(mu.shape, device=self.device)
-    #         mu, var = self.prior.compute_param(x_samples_next)
-    #
-    #     return log_prob
 
     def forward(self, y, inp_tfm=None, beta=1., n_samples=1):
         """
