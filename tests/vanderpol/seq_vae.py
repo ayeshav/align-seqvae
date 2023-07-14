@@ -85,7 +85,10 @@ class PriorVanderPol(nn.Module):
         self.mu = 1.5 * torch.ones(1, device=device)
 
     def compute_velocity(self, x):
-        if len(x.shape) == 3:
+        if len(x.shape) == 2:
+            vel_x = self.mu * (x[:, 0] - x[:, 0] ** 3 / 3 - x[:, :1])
+            vel_y = x[:, 0] / self.mu
+        elif len(x.shape) == 3:
             vel_x = self.mu * (x[:, :, 0] - x[:, :, 0] ** 3 / 3 - x[:, :, 1])
             vel_y = x[:, :, 0] / self.mu
         else:
@@ -111,6 +114,24 @@ class PriorVanderPol(nn.Module):
         mu, var = self.compute_param(x_prev)
         log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x), (-2, -1))
         return log_prob
+
+    def sample_k_step_ahead(self, x, K, keep_trajectory=False):
+        x_trajectory = []
+        means = []
+        vars = []
+        for t in range(K):
+            if t == 0:
+                mu, var = self.compute_param(x)
+            else:
+                mu, var = self.compute_param(x_trajectory[-1])
+            means.append(mu)
+            vars.append(var)
+
+            x_trajectory.append(mu + torch.sqrt(var) * torch.randn(x.shape, device=x.device))
+        if keep_trajectory:
+            return x_trajectory, means, vars
+        else:
+            return x_trajectory[-1], means[-1], vars[-1]
 
 
 class Encoder(nn.Module):
@@ -305,10 +326,12 @@ class BernoulliDecoder(nn.Module):
 
 class SeqVae(nn.Module):
     def __init__(self, dx, dy, dh_e, dy_out=None,
-                 likelihood='Bernoulli', fixed_variance=True, fancy=True, device='cpu'):
+                 likelihood='Bernoulli', fixed_variance=True, fancy=True, device='cpu',
+                 k_step=1):
         super().__init__()
 
         self.dx = dx
+        self.k_step = k_step
 
         self.prior = Prior(dx, fixed_variance=fixed_variance, device=device)
         self.encoder = Encoder(dy, dx, dh_e, device=device,
@@ -332,14 +355,29 @@ class SeqVae(nn.Module):
         :param x_samples: A tensor of latent samples of dimension Batch by Time by Dy
         :return:
         """
-        if len(x_samples.shape) > 3:
-            log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
-                                         torch.ones(1, device=self.device)).log_prob(x_samples[:, :, 0]), -1)
-            log_prior = log_prior + self.prior(x_samples[:, :, :-1], x_samples[:, :, 1:])
+        if self.k_step == 1:
+            if len(x_samples.shape) > 3:
+                log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                             torch.ones(1, device=self.device)).log_prob(x_samples[:, :, 0]), -1)
+                log_prior = log_prior + self.prior(x_samples[:, :, :-1], x_samples[:, :, 1:])
+            else:
+                log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                             torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
+                log_prior = log_prior + self.prior(x_samples[:, :-1], x_samples[:, 1:])
         else:
-            log_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
-                                         torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
-            log_prior = log_prior + self.prior(x_samples[:, :-1], x_samples[:, 1:])
+            log_prior = 0
+
+            for t in range(x_samples.shape[1] - 1):
+                if len(x_samples.shape) > 3:
+                    K_ahead = min(self.k_step, x_samples[:, :, t + 1:].shape[1])
+                    _, mu_k_ahead, var_k_ahead = self.prior.sample_k_step_ahead(x_samples[:, :, t], K_ahead)
+                    log_prior = log_prior + torch.sum(
+                        Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, :, t + K_ahead]), -1)
+                else:
+                    K_ahead = min(self.k_step, x_samples[:, t + 1:].shape[1])
+                    _, mu_k_ahead, var_k_ahead = self.prior.sample_k_step_ahead(x_samples[:, t], K_ahead)
+                    log_prior = log_prior + torch.sum(
+                        Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
         return log_prior
 
     # def compute_k_step_pred(self, x, k):
