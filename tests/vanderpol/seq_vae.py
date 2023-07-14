@@ -380,7 +380,6 @@ class SeqVae(nn.Module):
                         Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
         return log_prior
 
-
     def forward(self, y, inp_tfm=None, beta=1., n_samples=1):
         """
         In the forward method, we compute the negative elbo and return it back
