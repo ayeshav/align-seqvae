@@ -334,9 +334,9 @@ class SeqVae(nn.Module):
         self.k_step = k_step
 
         self.prior = Prior(dx, fixed_variance=fixed_variance, device=device)
-        self.encoder = Encoder(dy, dx, dh_e, device=device,
-                               prior_func=self.prior.compute_param if fancy else None)
-        # self.encoder = EncoderV2(dy, dx, dh_e, device=device)
+        # self.encoder = Encoder(dy, dx, dh_e, device=device,
+        #                        prior_func=self.prior.compute_param if fancy else None)
+        self.encoder = EncoderV2(dy, dx, dh_e, device=device)
         self.device = device
 
         if dy_out is None:

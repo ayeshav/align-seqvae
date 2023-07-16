@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from torch.distributions import Normal, Poisson, Bernoulli
 from utils import *
@@ -14,14 +15,14 @@ def get_likelihood(obsv_params, f_dec, y, distribution='Normal'):
         var_obsv_tfm = torch.exp(f_dec_var(var_obsv))
         log_like = torch.sum(Normal(loc=mu_obsv_tfm,
                                     scale=torch.sqrt(var_obsv_tfm)).log_prob(y), (-1, -2))
-    elif distribution == "Poisson":
+    elif distribution == "Poisson" or distribution == "Bernoulli":
         lograte = obsv_params
-        f_dec_mean = f_dec
+        f_dec_mean = f_dec[0]
 
         lograte_tfm = f_dec_mean(lograte)
 
-        # log_like = torch.sum(Bernoulli(torch.sigmoid(y_tfm)).log_prob(y), (-1,-2))
-        log_like = torch.sum(Poisson(torch.exp(lograte_tfm)).log_prob(y), (-1,-2))
+        log_like = torch.sum(Bernoulli(torch.sigmoid(lograte_tfm)).log_prob(y), (-1,-2))
+        # log_like = torch.sum(Poisson(torch.exp(lograte_tfm)).log_prob(y), (-1,-2))
 
     return log_like
 
@@ -62,12 +63,15 @@ def compute_alignment_loss(ref_vae,
     return -loss
 
 
-def get_alignment_params(dy, dy_ref, distribution='Normal', linear_flag=False, device='cpu'):
+def get_alignment_params(dy, dy_ref, dy_out=None, distribution='Normal', linear_flag=False, device='cpu'):
 
     if linear_flag:
-        f_enc = nn.Sequential(*[nn.Linear(dy, 128),
-                                nn.ReLU(),
-                                nn.Linear(128, dy_ref)]).to(device)
+        f_enc = Mlp(dy, dy_out, 128).to(device)
+        # f_enc = nn.Sequential(*[nn.Linear(dy, 128),
+        #                         nn.Softplus(),
+        #                         nn.Linear(128, 128),
+        #                         nn.Softplus(),
+        #                         nn.Linear(128, dy_out)]).to(device)
     else:
         f_enc = nn.Linear(dy, dy_ref).to(device)
         torch.nn.init.normal_(f_enc.weight)
@@ -84,10 +88,11 @@ def get_alignment_params(dy, dy_ref, distribution='Normal', linear_flag=False, d
 
 def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
                              n_epochs,
+                             dy_out=None,
                              K=40,
                              lr=1e-3,
                              distribution='Normal',
-                             linear_flag=True):
+                             linear_flag=False):
     """
     training function for learning linear alignment and updating prior params
     """
@@ -95,8 +100,10 @@ def train_invertible_mapping(ref_vae, train_dataloader, dy_ref,
     assert train_dataloader.shuffle
 
     dy = train_dataloader.data_tuple[0].shape[-1]
+    if dy_out is None:
+        dy_out = dy_ref
 
-    f_enc, f_dec = get_alignment_params(dy, dy_ref, distribution=distribution,
+    f_enc, f_dec = get_alignment_params(dy, dy_ref,dy_out, distribution=distribution,
                                         linear_flag=linear_flag, device=ref_vae.device)
     param_list = list(f_enc.parameters()) + [param for param in nn.ParameterList(f_dec).parameters()]
 
