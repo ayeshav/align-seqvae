@@ -42,15 +42,16 @@ def train_ref_vae(normalize=True, featurize=False):
         net = None
 
     data_ref = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
-    vae = SeqVae(dx, 64, dh, dy_ref, likelihood='Bernoulli', device=device)
-    res = vae_training(vae, data_ref, inp_tfm=net, lr=1e-3, n_epochs=2_000)
+    vae = SeqVae(dx, 64, dh, dy_ref, likelihood='Bernoulli', k_step=10, device=device)
+    res = vae_training(vae, data_ref, inp_tfm=net, lr=1e-3, n_epochs=2_50)
 
     torch.save(res, 'trained_models/reference_model_bernoulli.pt')
 
 
 def reuse_dynamics(reference_model, epochs=20):
 
-    vae, _ = torch.load(reference_model)
+    vae, _ = torch.load(reference_model, map_location=torch.device('cpu'))
+    ref_vae = vae[0].to('cpu')
 
     y = data[1]['y'].float()
     N_train = int(np.ceil(0.8 * y.shape[0]))
@@ -66,8 +67,8 @@ def reuse_dynamics(reference_model, epochs=20):
 
     # for i in range(1, len(data)):
     y_dataloader = SeqDataLoader((y_train,), batch_size=100, shuffle=True)
-    res_alignment = train_invertible_mapping(vae, y_dataloader, dy_ref, epochs,
-                                             distribution='Bernoulli')
+    res_alignment = train_invertible_mapping(ref_vae, y_dataloader, dy_ref, epochs, dy_out=64, K=10,
+                                             distribution='Bernoulli', linear_flag=True)
 
     return res_alignment
 
@@ -85,8 +86,8 @@ def main():
     if not os.path.isfile(model_path + '/reference_model_bernoulli.pt'):
         train_ref_vae(normalize=False, featurize=True)
 
-    res_alignment = reuse_dynamics(model_path + '/reference_model_bernoulli.pt', 150)
-    torch.save(res_alignment, 'result_prior.pt')
+    res_alignment = reuse_dynamics(model_path + '/reference_model_bernoulli.pt', 500)
+    torch.save(res_alignment, 'result_bernoulli.pt')
 
 
 if __name__ == '__main__':
