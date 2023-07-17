@@ -15,7 +15,7 @@ sigmoid = lambda z: 1 / (1 + np.exp(-z))
 softplus = lambda z: np.log(1 + np.exp(z))
 
 
-def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='poisson'):
+def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='bernoulli', N_max=4):
     x = np.empty((K, T, 2))
     y = np.empty((K, T, dy))
 
@@ -32,11 +32,12 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
         log_rates = x[:, 0] @ C + b
         y[:, 0] = npr.poisson(softplus(log_rates))
     elif noise_type == 'bernoulli':
-        C = 10 * npr.rand(2, dy) - 5
-        b = 5 * npr.randn(1, dy)
+        C = 4 * npr.rand(2, dy) - 2
+        # b = 0.5 * npr.rand(1, dy) - 0.25
+        b = np.zeros((1, dy))
 
         log_rates = x[:, 0] @ C + b
-        y[:, 0] = npr.binomial(1, sigmoid(log_rates))
+        y[:, 0] = npr.binomial(N_max, sigmoid(log_rates))
 
     # propagate time series
     for t in range(1, T):
@@ -53,7 +54,7 @@ def noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=1.5, dt=1e-2, noise_type='
             y[:, t] = npr.poisson(softplus(log_rates))
         elif noise_type == 'bernoulli':
             log_rates = x[:, t] @ C + b
-            y[:, t] = npr.binomial(1, sigmoid(log_rates))
+            y[:, t] = npr.binomial(N_max, sigmoid(log_rates))
 
     return x, y, C, b
 
@@ -68,7 +69,7 @@ T = 300  # length of time series
 if noise_type == 'gaussian':
     dys = [30, 30, 40, 50]
 elif noise_type == 'bernoulli' or noise_type == 'poisson':
-    dys = [200, 200, 250, 300]
+    dys = [250, 250, 200, 300]
 
 dx = 2
 t_eval = np.arange(0, (T+1) * dt, dt)
@@ -77,7 +78,8 @@ t_eval = np.arange(0, (T+1) * dt, dt)
 data_all = []
 
 for dy in tqdm(dys):
-    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y, mu=mu, dt=dt, noise_type=noise_type)
+    x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y,
+                                    mu=mu, dt=dt, noise_type=noise_type, N_max=4)
     data = {}
     data['x'] = torch.from_numpy(x).float()
     data['y'] = torch.from_numpy(y).float()
