@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal, Poisson, Bernoulli
+from torch.distributions import Normal, Poisson, Bernoulli, Binomial
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -307,11 +307,12 @@ class PoissonDecoder(nn.Module):
         return log_prob
 
 
-class BernoulliDecoder(nn.Module):
-    def __init__(self, dx, dy, device='cpu'):
-        super(BernoulliDecoder, self).__init__()
+class BinomialDecoder(nn.Module):
+    def __init__(self, dx, dy, device='cpu', total_count=4):
+        super(BinomialDecoder, self).__init__()
         self.device = device
         self.decoder = nn.Linear(dx, dy).to(device)
+        self.total_count = total_count
 
     def compute_param(self, x):
         log_probs = self.decoder(x)
@@ -320,7 +321,8 @@ class BernoulliDecoder(nn.Module):
 
     def forward(self, samples, x):
         probs = self.compute_param(samples)
-        log_prob = torch.sum(Bernoulli(probs=probs).log_prob(x))
+        # log_prob = torch.sum(Bernoulli(probs=probs).log_prob(x))
+        log_prob = torch.sum(Binomial(total_count=self.total_count, probs=probs).log_prob(x))
         return log_prob
 
 
