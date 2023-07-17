@@ -62,8 +62,9 @@ sigma_x = 0.5  # state noise
 sigma_y = 0.1  # observation noise
 dt = 1e-1  # euler integration time step
 mu = 1.5
-K = 1_000  # number of batches
+K = 2_000  # number of batches
 T = 300  # length of time series
+N_max = 4
 
 "different number of observations for sessions/animals"
 if noise_type == 'gaussian':
@@ -79,7 +80,7 @@ data_all = []
 
 for dy in tqdm(dys):
     x, y, C, b = noisy_vanderpol_v2(K, T, dy, sigma_x, sigma_y,
-                                    mu=mu, dt=dt, noise_type=noise_type, N_max=4)
+                                    mu=mu, dt=dt, noise_type=noise_type, N_max=N_max)
     data = {}
     data['x'] = torch.from_numpy(x).float()
     data['y'] = torch.from_numpy(y).float()
