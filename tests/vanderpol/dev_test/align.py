@@ -5,7 +5,7 @@ from utils import *
 
 
 class Align(nn.Module):
-    def __init__(self, dy, dy_ref, K=1, distribution='Normal', linear_flag=True, device='cpu'):
+    def __init__(self, dy, dy_ref, dy_embed=None, K=1, distribution='Normal', linear_flag=True, device='cpu'):
         super().__init__()
 
         self.dy = dy
@@ -17,32 +17,28 @@ class Align(nn.Module):
         if linear_flag:
             self.f_enc = nn.Linear(dy, dy_ref).to(device)
         else:
-            self.f_enc = nn.Linear(dy, dy_ref).to(device)
+            self.f_enc = Mlp(dy, dy_embed, 128).to(device)
 
-        self.f_dec = [nn.Linear(dy_ref, dy).to(device)]
+        self.f_dec_mean = nn.Linear(dy_ref, dy).to(device)
 
         "include noise scaling for normal distribution"
         if distribution == 'Normal':
-            f_dec_var = nn.Linear(dy_ref, dy).to(device)
-            self.f_dec.append(f_dec_var)
+            self.f_dec_var = nn.Linear(dy_ref, dy).to(device)
 
     def compute_likelihood(self, obsv_params, y):
         "compute likelihood function based on distribution of new dataset"
 
         if self.distribution == "Normal":
             mu_obsv, var_obsv = obsv_params
-            f_dec_mean, f_dec_var = self.f_dec
 
-            mu_obsv_tfm = f_dec_mean(mu_obsv)
-            var_obsv_tfm = torch.exp(f_dec_var(var_obsv))
+            mu_obsv_tfm = self.f_dec_mean(mu_obsv)
+            var_obsv_tfm = torch.exp(self.f_dec_var(var_obsv))
             log_like = torch.sum(Normal(loc=mu_obsv_tfm,
                                         scale=torch.sqrt(var_obsv_tfm)).log_prob(y), (-1, -2))
 
         elif self.distribution == "Binomial":
             lograte = obsv_params
-            f_dec_mean = self.f_dec[0]
-
-            lograte_tfm = f_dec_mean(lograte)
+            lograte_tfm = self.f_dec_mean(lograte)
 
             log_like = torch.sum(Binomial(torch.sigmoid(lograte_tfm)).log_prob(y), (-1,-2))
 
@@ -77,7 +73,7 @@ class Align(nn.Module):
         obsv_params = ref_vae.decoder.compute_param(x_samples)
 
         # transform parameters to new space using decoder
-        log_like = self.get_likelihood(obsv_params, y)
+        log_like = self.compute_likelihood(obsv_params, y)
 
         loss = torch.mean(log_like + log_k_step_prior)
         return -loss
