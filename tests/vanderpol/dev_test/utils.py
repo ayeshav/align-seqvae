@@ -44,35 +44,16 @@ class SeqDataLoader:
         return self.n_batches
 
 
-def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
-                 weight_decay=1e-4, n_samples=1):
-    """
-    function that will train a vae
-    :param vae: a SeqVae object
-    :param train_dataloader: a dataloader object
-    :param n_epochs: Number of epochs to train for
-    :param lr: learning rate of optimizer
-    :param weight_decay: value of weight decay
-    :return: trained vae and training losses
-    """
-    assert isinstance(vae, SeqVae)
-    assert train_dataloader.shuffle
-    assert isinstance(train_dataloader, SeqDataLoader)
+class Mlp(nn.Module):
+    def __init__(self, dx, dy, dh, device='cpu'):
+        super().__init__()
 
-    param_list = list(vae.parameters())
+        self.net = nn.Sequential(*[nn.Linear(dx, dh), nn.Softplus(),
+                                   nn.Linear(dh, dh), nn.Softplus(),
+                                   nn.Linear(dh, dy)]).to(device)
 
-    opt = torch.optim.AdamW(params=param_list, lr=lr, weight_decay=weight_decay)
-    training_losses = []
-    for _ in tqdm(range(n_epochs)):
-        for y, in train_dataloader:
-            opt.zero_grad()
-            loss = vae(y.to(vae.device), n_samples=n_samples)
-            loss.backward()
-            opt.step()
-
-            with torch.no_grad():
-                training_losses.append(loss.item())
-    return vae, training_losses
+    def forward(self, x):
+        return self.net(x)
 
 
 def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
