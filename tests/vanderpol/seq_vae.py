@@ -349,7 +349,7 @@ class SeqVae(nn.Module):
         elif likelihood == 'Poisson':
             self.decoder = PoissonDecoder(dx, dy_out, device=device)
         elif likelihood == 'Bernoulli':
-            self.decoder = BernoulliDecoder(dx, dy_out, device=device)
+            self.decoder = BinomialDecoder(dx, dy_out, device=device)
 
     def _prior(self, x_samples):
         """
