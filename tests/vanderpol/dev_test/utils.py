@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-from seq_vae import SeqVae
-from tqdm import tqdm
 
 
 class SeqDataLoader:
@@ -57,12 +55,12 @@ class Mlp(nn.Module):
 
 
 def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
-    "function to compute wasserstein assuming P_s and P_t are independent gaussians"
+    """
+    compute wasserstein assuming P_s and P_t are independent gaussians
+    """
 
-    matrix_sqrt = torch.sqrt(torch.diag(cov_t))
-    ind_cov_s = torch.diag((torch.diag(cov_s)))
-
-    w2 = torch.sum((mu_s - mu_t) ** 2) + torch.trace(cov_s) + torch.trace(cov_t) - \
-         2 * torch.trace(torch.sqrt(torch.diag(matrix_sqrt) @ ind_cov_s @ torch.diag(matrix_sqrt)))
+    w2 = torch.sum((mu_s-mu_t)**2) + torch.trace(cov_s+cov_t) - 2*torch.trace(cov_s*cov_t + 1e-6).sqrt()
 
     return w2
+
+

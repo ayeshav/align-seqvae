@@ -35,9 +35,13 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     return vae, training_losses
 
 
-def alignment_training(ref_vae, align, train_dataloader, n_epochs=100, lr=1e-3):
+def alignment_training(ref_vae, align, train_dataloader, ref_ss=None, n_epochs=100, lr=1e-3):
     """
-    training function for learning linear alignment and updating prior params
+    function for training alignment parameters
+    :param ref_vae: pre-trained vae
+    :param align: align object
+    :param train_dataloader: a dataloader object
+    :param ref_ss: sufficient stats for reference latents
     """
     assert isinstance(ref_vae, SeqVae)
     assert isinstance(train_dataloader, SeqDataLoader)
@@ -50,7 +54,7 @@ def alignment_training(ref_vae, align, train_dataloader, n_epochs=100, lr=1e-3):
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = align(ref_vae, y)
+            loss = align(ref_vae, y, ref_ss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(align.parameters(),
                                            max_norm=1., norm_type=2)

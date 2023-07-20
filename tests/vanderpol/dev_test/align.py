@@ -63,13 +63,13 @@ class Align(nn.Module):
 
         return log_k_step_prior
 
-    def forward(self, ref_vae, y):
+    def forward(self, ref_vae, y, ref_ss=None):
 
         # apply transformation to data
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
 
         # pass to encoder and get samples
-        x_samples = ref_vae.encoder.sample(y_tfm, align_mode=True)[0]  # for the given dataset
+        x_samples = ref_vae.encoder.sample(y_tfm, align_mode=True)[0]   # for the given dataset
 
         log_k_step_prior = self.compute_log_prior(ref_vae, x_samples)
 
@@ -77,7 +77,15 @@ class Align(nn.Module):
         log_like = self.compute_likelihood(ref_vae.decoder, x_samples, y)
 
         loss = torch.mean(log_like + log_k_step_prior)
-        return -loss
+
+        # optionally compute wasserstein
+        if ref_ss is not None:
+            mu = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
+            cov = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
+            w2 = compute_wasserstein(*ref_ss, mu, cov)
+            return -loss + w2
+        else:
+            return -loss
 
 
 
