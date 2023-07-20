@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal, Poisson, Bernoulli, Binomial
+from torch.distributions import Normal, Poisson, Binomial
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -321,7 +321,6 @@ class BinomialDecoder(nn.Module):
 
     def forward(self, samples, x):
         probs = self.compute_param(samples)
-        # log_prob = torch.sum(Bernoulli(probs=probs).log_prob(x))
         log_prob = torch.sum(Binomial(total_count=self.total_count, probs=probs).log_prob(x))
         return log_prob
 
