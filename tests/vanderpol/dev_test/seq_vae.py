@@ -110,4 +110,3 @@ class DualAnimalSeqVae(nn.Module):
         # compute the elbo
         elbo = torch.mean(log_like_ref + log_like_other + beta * (log_prior_ref + log_prior_other - log_q_ref - log_q_other))
         return -elbo
-    
