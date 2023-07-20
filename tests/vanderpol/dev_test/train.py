@@ -54,7 +54,7 @@ def alignment_training(ref_vae, align, train_dataloader, ref_ss=None, n_epochs=1
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = align(ref_vae, y, ref_ss)
+            loss = align(ref_vae, y.to(ref_vae.device), ref_ss)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(align.parameters(),
                                            max_norm=1., norm_type=2)
