@@ -26,7 +26,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device), n_samples=n_samples)
+            loss = vae(y.to(vae.device))
             loss.backward()
             opt.step()
 
