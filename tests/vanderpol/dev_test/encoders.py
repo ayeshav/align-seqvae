@@ -76,12 +76,13 @@ class EmbeddingEncoder(nn.Module):
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
-    def compute_param(self, x):
+    def compute_param(self, x, align_mode=False):
         """
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        x = self.embed_network(x)
+        if not align_mode:
+            x = self.embed_network(x)
 
         h, _ = self.gru(x)
 
@@ -93,12 +94,12 @@ class EmbeddingEncoder(nn.Module):
         var = Softplus(logvar) + eps
         return mu, var
 
-    def sample(self, x, n_samples=1):
+    def sample(self, x, n_samples=1, align_mode=False):
         """
         :param x: X is a tensor of observations of shape Batch by Time by Dimension
         :return:
         """
-        mu, var = self.compute_param(x)
+        mu, var = self.compute_param(x, align_mode)
         samples = mu + torch.sqrt(var) * torch.randn([n_samples] + list(mu.shape), device=self.device)
         return samples.squeeze(0), mu, var
 

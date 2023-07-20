@@ -5,7 +5,7 @@ from utils import *
 
 
 class Align(nn.Module):
-    def __init__(self, dy, dy_ref, dy_embed=None, K=1, distribution='Normal', linear_flag=True, device='cpu'):
+    def __init__(self, dy, dy_ref, d_embed=None, K=1, distribution='Normal', linear_flag=True, device='cpu'):
         super().__init__()
 
         self.dy = dy
@@ -17,7 +17,10 @@ class Align(nn.Module):
         if linear_flag:
             self.f_enc = nn.Linear(dy, dy_ref).to(device)
         else:
-            self.f_enc = Mlp(dy, dy_embed, 128).to(device)
+            if d_embed is None:
+                raise TypeError("uhoh you forgot to specify d_embed for the featurizer")
+
+            self.f_enc = Mlp(dy, d_embed, 128).to(device)
 
         self.f_dec_mean = nn.Linear(dy_ref, dy).to(device)
 
@@ -66,7 +69,7 @@ class Align(nn.Module):
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
 
         # pass to encoder and get samples
-        x_samples = ref_vae.encoder(y_tfm)[0]  # for the given dataset
+        x_samples = ref_vae.encoder.sample(y_tfm, align_mode=True)[0]  # for the given dataset
 
         log_k_step_prior = self.compute_log_prior(ref_vae, x_samples)
 
