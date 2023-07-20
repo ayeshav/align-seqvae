@@ -1,11 +1,11 @@
 import torch
-import tqdm
+from tqdm import tqdm
 from seq_vae import SeqVae
 from utils import *
 
 
 def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
-                 weight_decay=1e-4, n_samples=1):
+                 weight_decay=1e-4):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -39,6 +39,7 @@ def alignment_training(ref_vae, align, train_dataloader, n_epochs=100, lr=1e-3):
     """
     training function for learning linear alignment and updating prior params
     """
+    assert isinstance(ref_vae, SeqVae)
     assert isinstance(train_dataloader, SeqDataLoader)
     assert train_dataloader.shuffle
 

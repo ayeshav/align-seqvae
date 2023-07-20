@@ -25,8 +25,10 @@ class Align(nn.Module):
         if distribution == 'Normal':
             self.f_dec_var = nn.Linear(dy_ref, dy).to(device)
 
-    def compute_likelihood(self, obsv_params, y):
+    def compute_likelihood(self, decoder, x_samples, y):
         "compute likelihood function based on distribution of new dataset"
+
+        obsv_params = decoder.compute_param(x_samples)
 
         if self.distribution == "Normal":
             mu_obsv, var_obsv = obsv_params
@@ -40,7 +42,8 @@ class Align(nn.Module):
             lograte = obsv_params
             lograte_tfm = self.f_dec_mean(lograte)
 
-            log_like = torch.sum(Binomial(torch.sigmoid(lograte_tfm)).log_prob(y), (-1,-2))
+            log_like = torch.sum(Binomial(total_count=decoder.total_count,
+                                          probs=torch.sigmoid(lograte_tfm)).log_prob(y), (-1, -2))
 
         return log_like
 
@@ -59,8 +62,6 @@ class Align(nn.Module):
 
     def forward(self, ref_vae, y):
 
-        assert isinstance(ref_vae, SeqVae)
-
         # apply transformation to data
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
 
@@ -69,11 +70,8 @@ class Align(nn.Module):
 
         log_k_step_prior = self.compute_log_prior(ref_vae, x_samples)
 
-        # get parameters from observation model
-        obsv_params = ref_vae.decoder.compute_param(x_samples)
-
-        # transform parameters to new space using decoder
-        log_like = self.compute_likelihood(obsv_params, y)
+        # get likelihood in original space
+        log_like = self.compute_likelihood(ref_vae.decoder, x_samples, y)
 
         loss = torch.mean(log_like + log_k_step_prior)
         return -loss
