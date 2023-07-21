@@ -1,7 +1,38 @@
 import torch
 from tqdm import tqdm
-from seq_vae import SeqVae
+from seq_vae import *
 from utils import *
+
+
+def dualvae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
+                 weight_decay=1e-4):
+    """
+    function that will train a vae
+    :param vae: a SeqVae object
+    :param train_dataloader: a dataloader object
+    :param n_epochs: Number of epochs to train for
+    :param lr: learning rate of optimizer
+    :param weight_decay: value of weight decay
+    :return: trained vae and training losses
+    """
+    assert isinstance(vae, DualAnimalSeqVae)
+    assert train_dataloader.shuffle
+    assert isinstance(train_dataloader, SeqDataLoader)
+
+    param_list = list(vae.parameters())
+
+    opt = torch.optim.AdamW(params=param_list, lr=lr, weight_decay=weight_decay)
+    training_losses = []
+    for _ in tqdm(range(n_epochs)):
+        for y, y_other in train_dataloader:
+            opt.zero_grad()
+            loss = vae(y.to(vae.device), y_other.to(vae.device))
+            loss.backward()
+            opt.step()
+
+            with torch.no_grad():
+                training_losses.append(loss.item())
+    return vae, training_losses
 
 
 def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
