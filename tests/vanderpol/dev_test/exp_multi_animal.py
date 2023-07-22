@@ -32,42 +32,11 @@ dh = 64
 train_ratio = 0.8
 
 K_vae = 1
-
+K_align = 10
 N_epochs_vae = 2_000
 batch_size = 100
 
 noise = 'Normal'
-
-
-def dualvae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
-                 weight_decay=1e-4):
-    """
-    function that will train a vae
-    :param vae: a SeqVae object
-    :param train_dataloader: a dataloader object
-    :param n_epochs: Number of epochs to train for
-    :param lr: learning rate of optimizer
-    :param weight_decay: value of weight decay
-    :return: trained vae and training losses
-    """
-    assert isinstance(vae, DualAnimalSeqVae)
-    assert train_dataloader.shuffle
-    assert isinstance(train_dataloader, SeqDataLoader)
-
-    param_list = list(vae.parameters())
-
-    opt = torch.optim.AdamW(params=param_list, lr=lr, weight_decay=weight_decay)
-    training_losses = []
-    for _ in tqdm(range(n_epochs)):
-        for y, y_other in train_dataloader:
-            opt.zero_grad()
-            loss = vae(y.to(vae.device), y_other.to(vae.device))
-            loss.backward()
-            opt.step()
-
-            with torch.no_grad():
-                training_losses.append(loss.item())
-    return vae, training_losses
 
 
 def get_training_data(y, y_other, normalize=True):
@@ -97,16 +66,19 @@ def main():
     dy, dy_other = data[0]['y'].shape[-1], data[2]['y'].shape[-1]
 
     "let's define our vae"
-    encoder = DualAnimalEncoder(dy, dy_other, dx, dh)
+    encoder = Encoder(dy, dx, dh)
     prior = Prior(dx)
-    decoder = DualNormalDecoder(dx, dy, dy_other)
+    decoder = NormalDecoder(dx, dy)
 
-    vae = DualAnimalSeqVae(prior, encoder, decoder, device, K_vae)
+    align = Align(dy_other, dy, distribution=noise)
+
+    vae = AlignSeqVae(prior, encoder, decoder, align, device, K_vae, K_align)
     train_dataloader = get_training_data(data[0]['y'], data[2]['y'], normalize=True)
 
     "let's train our vae"
-    ref_vae, losses_vae = dualvae_training(vae, train_dataloader, n_epochs=N_epochs_vae, lr=1e-3)
-    torch.save((ref_vae, vae), f'results_{noise}.pt')
+    results = alignvae_training(vae, align, train_dataloader, n_epochs=5, n_epochs_vae=100,
+                                            n_epochs_align=50, lr=1e-3)
+    torch.save(results, f'results_{noise}_alternate.pt')
 
 
 if __name__ == '__main__':
