@@ -56,8 +56,8 @@ def alignvae_training(vae, align, train_dataloader, n_epochs=5, n_epochs_vae=100
     training_losses_vae, training_losses_align = [], []
 
     for _ in tqdm(range(n_epochs)):
-        for y, y_other in train_dataloader:
-            for _ in tqdm(range(n_epochs_vae)):
+        for _ in tqdm(range(n_epochs_vae)):
+            for y, y_other in train_dataloader:
                 opt_vae.zero_grad()
                 loss = vae(y.to(vae.device), y_other.to(vae.device), align_mode=False)
                 loss.backward()
@@ -66,7 +66,8 @@ def alignvae_training(vae, align, train_dataloader, n_epochs=5, n_epochs_vae=100
                 with torch.no_grad():
                     training_losses_vae.append(loss.item())
 
-            for _ in tqdm(range(n_epochs_align)):
+        for _ in tqdm(range(n_epochs_align)):
+            for y, y_other in train_dataloader:
                 opt_align.zero_grad()
                 loss = vae(y.to(vae.device), y_other.to(vae.device), align_mode=True)
                 loss.backward()
