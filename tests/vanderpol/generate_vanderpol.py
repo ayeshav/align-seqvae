@@ -89,15 +89,6 @@ for dy in tqdm(dys):
 
     data_all.append(data)
 
-# In[]
-# fig, axs = plt.subplots(1, 2, figsize=(12, 6), dpi=100)
-#
-# # for k in range(K):
-# #     axs[0].plot(data_all[0]['x'][k, :, 0], data_all[0]['x'][k, :, 1], alpha=0.3)
-# #     for d in range(30):
-# #         axs[1].plot(data_all[0]['y'][0, :, d], alpha=0.3)
-# # fig.show()
-
 
 data_path = 'data'
 print(torch.sum(torch.isnan(torch.from_numpy(x))),
@@ -106,4 +97,4 @@ print(torch.sum(torch.isnan(torch.from_numpy(x))),
 if not os.path.isdir(data_path):
     os.makedirs(data_path)
 
-torch.save(data_all, f'data/noisy_vanderpol_{noise_type}.pt')
+torch.save(data_all, f'data/noisy_vanderpol_{noise_type}_dt={dt}.pt')
