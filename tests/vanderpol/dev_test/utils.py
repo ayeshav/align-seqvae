@@ -54,16 +54,6 @@ class Mlp(nn.Module):
         return self.net(x)
 
 
-# def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
-#     """
-#     compute wasserstein assuming P_s and P_t are independent gaussians
-#     """
-#
-#     w2 = torch.sum((mu_s-mu_t)**2) + torch.trace(cov_s+cov_t) - 2*torch.trace(cov_s*cov_t + 1e-6).sqrt()
-#
-#     return w2
-
-
 def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
     "function to compute wasserstein assuming P_s and P_t are independent gaussians"
     sqrt_cov_s = get_matrix_sqrt(cov_s)
@@ -80,3 +70,4 @@ def get_matrix_sqrt(cov):
 
     lam, Q = torch.linalg.eigh(cov)
     return Q@torch.diag(torch.sqrt(lam))@Q.T
+
