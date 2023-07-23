@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
+from utils import compute_wasserstein
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -57,13 +58,16 @@ class SeqVae(nn.Module):
 
 
 class DualAnimalSeqVae(nn.Module):
-    def __init__(self, prior, encoder, decoder, device='cpu', k_step=1):
+    def __init__(self, prior, encoder, decoder, f_enc, other_animal_decoder,
+                 device='cpu', k_step=1):
         super().__init__()
         self.k_step = k_step
 
         self.prior = prior
         self.encoder = encoder
         self.decoder = decoder
+        self.f_enc = f_enc
+        self.other_animal_decoder = other_animal_decoder
         self.device = device
 
     def _prior(self, x_samples):
@@ -86,30 +90,63 @@ class DualAnimalSeqVae(nn.Module):
                     Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_samples[:, t + K_ahead]), -1)
         return log_prior
 
-    def forward(self, y_ref, y_other, beta=1., align_mode=False):
+    def ref_animal_loss(self, y_ref, beta=1.):
+        # pass data through encoder and get mean, variance, samples and log density
+        x_samples, mu, var, log_q = self.encoder(y_ref)
+
+        # given samples, compute the log prior
+        log_prior = self._prior(x_samples)
+
+        # given samples, compute the log likelihood
+        log_like = self.decoder(x_samples, y_ref)
+
+        # compute the elbo
+        elbo = torch.mean(log_like + beta * (log_prior - log_q))
+        return x_samples, -elbo
+
+    def other_animal_loss(self, y_other, beta=1.):
+        # first pass data from f_enc
+        y_hat = self.f_enc(y_other)
+
+        # pass data through encoder and get mean, variance, samples and log density
+        x_samples, mu, var, log_q = self.encoder(y_hat)
+
+        # given samples, compute the log prior
+        log_prior = self._prior(x_samples)
+
+        # can we reconstruct y_hat using regular decoder
+        log_like = self.decoder(x_samples, y_hat)
+
+        # compute the likelihood using animal specific likelihood
+        log_like = log_like + self.other_animal_decoder(x_samples, y_other)
+
+        # log_like = self.other_animal_decoder(x_samples, y_other)
+
+        # compute elbo
+        elbo = torch.mean(log_like + beta * (log_prior - log_q))
+        return x_samples, -elbo
+
+    def forward(self, y_ref, y_other, beta=1., align_mode=False, reg_weight=100):
         """
         In the forward method, we compute the negative elbo and return it back
         :param y: Y is a tensor of observations of size Batch by Time by Dy
         :return:
         """
-        # pass data through encoder and get mean, variance, samples and log density for both ref and other animal
-        x_samples_ref, _, _, log_q_ref, x_samples_other, _, _, log_q_other = self.encoder(y_ref, y_other)
+        # ref animal elbo
+        x_ref_samples, ref_neg_elbo = self.ref_animal_loss(y_ref, beta=beta)
 
-        # given samples, compute the log prior for reference animal
-        log_prior_ref = self._prior(x_samples_ref)
+        mu_ref = torch.mean(x_ref_samples.view(-1, x_ref_samples.shape[-1]), 0)
+        cov_ref = torch.cov(x_ref_samples.view(-1, x_ref_samples.shape[-1]).T)
 
-        # given samples, compute the log prior for other animal
-        log_prior_other = self._prior(x_samples_other)
+        # other animal elbo
+        x_other_samples, other_neg_elbo = self.other_animal_loss(y_other, beta=beta)
+        mu_other = torch.mean(x_other_samples.view(-1, x_other_samples.shape[-1]), 0)
+        cov_other = torch.cov(x_other_samples.view(-1, x_other_samples.shape[-1]).T)
 
-        # given samples, compute the log likelihood for reference animal
-        log_like_ref = self.decoder(x_samples_ref, y_ref)
-
-        # given samples, compute the log likelihood for other animal
-        log_like_other = self.decoder(x_samples_other, y_other, other_flag=True)
-
-        # compute the elbo
-        elbo = torch.mean(log_like_ref + log_like_other + beta * (log_prior_ref + log_prior_other - log_q_ref - log_q_other))
-        return -elbo
+        # compute Wassertein
+        reg = compute_wasserstein(mu_ref, cov_ref,
+                                  mu_other, cov_other)
+        return ref_neg_elbo + other_neg_elbo + reg_weight * reg
 
 
 class AlignSeqVae(nn.Module):
@@ -167,7 +204,8 @@ class AlignSeqVae(nn.Module):
         log_like_other = self.align.compute_likelihood(self.decoder, x_samples_other, y_other)
 
         # compute the elbo for training the vae
-        elbo = torch.mean(log_like_ref + log_like_other + beta * (log_prior_ref + log_prior_other - log_q_ref - log_q_other))
+        elbo = torch.mean(
+            log_like_ref + log_like_other + beta * (log_prior_ref + log_prior_other - log_q_ref - log_q_other))
 
         if not align_mode:
             return -elbo
