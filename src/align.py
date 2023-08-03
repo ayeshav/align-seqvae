@@ -3,7 +3,6 @@ import torch.nn as nn
 from torch.distributions import Normal, Binomial
 from utils import *
 
-
 class Align(nn.Module):
     def __init__(self, dy, dy_ref, f_dec, d_embed=None, K=1, distribution='Normal', linear_flag=True, device='cpu'):
         super().__init__()
@@ -65,14 +64,15 @@ class Align(nn.Module):
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
 
         # pass to encoder and get samples
-        x_samples = ref_vae.encoder.sample(y_tfm, align_mode=True)[0]   # for the given dataset
+        x_samples, _, _, log_q = ref_vae.encoder(y_tfm)  # for the given dataset
 
         log_k_step_prior = self.compute_log_prior(ref_vae, x_samples)
 
         # get likelihood in original space
         log_like = self.f_dec(x_samples, y)
 
-        loss = torch.mean(log_like + log_k_step_prior)
+        # get elbo for aligned data
+        loss = torch.mean(log_like + log_k_step_prior-log_q)
 
         # optionally compute wasserstein
         # if ref_ss is not None:
