@@ -4,8 +4,8 @@ from seq_vae import *
 from utils import *
 
 
-def dualvae_training(vae, align, train_dataloader, n_epochs=100, lr=5e-4,
-                 weight_decay=1e-4, reg_weight=100):
+def dualvae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
+                     weight_decay=1e-4, beta=1.0, reg_weight=100):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -22,11 +22,11 @@ def dualvae_training(vae, align, train_dataloader, n_epochs=100, lr=5e-4,
     param_list = list(vae.parameters())
 
     opt = torch.optim.AdamW(params=param_list, lr=lr, weight_decay=weight_decay)
-    training_losses = []
+    training_losses, test_losses = [],[]
     for _ in tqdm(range(n_epochs)):
         for y, y_other in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device), y_other.to(vae.device), reg_weight=reg_weight)
+            loss = vae(y.to(vae.device), y_other.to(vae.device), beta=beta, reg_weight=reg_weight)
             loss.backward()
             opt.step()
 
@@ -36,7 +36,7 @@ def dualvae_training(vae, align, train_dataloader, n_epochs=100, lr=5e-4,
 
 
 def dualvae_coordinate_ascent_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
-                                       weight_decay=1e-4, reg_weight=100):
+                                       weight_decay=1e-4, beta=1.0, reg_weight=100):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -65,7 +65,7 @@ def dualvae_coordinate_ascent_training(vae, train_dataloader, n_epochs=100, lr=5
 
         for y, y_other in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device), y_other.to(vae.device), reg_weight=reg_weight)
+            loss = vae(y.to(vae.device), y_other.to(vae.device), beta=beta, reg_weight=reg_weight)
             loss.backward()
             opt.step()
 
@@ -75,7 +75,7 @@ def dualvae_coordinate_ascent_training(vae, train_dataloader, n_epochs=100, lr=5
 
 
 def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
-                 weight_decay=1e-4):
+                 weight_decay=1e-4, beta=1.0):
     """
     function that will train a vae
     :param vae: a SeqVae object
@@ -96,7 +96,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = vae(y.to(vae.device))
+            loss = vae(y.to(vae.device), beta=beta)
             loss.backward()
             opt.step()
 

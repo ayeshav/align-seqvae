@@ -1,16 +1,16 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal, Binomial
+from torch.distributions import Normal
 from utils import *
 
+
 class Align(nn.Module):
-    def __init__(self, dy, dy_ref, f_dec, d_embed=None, K=1, distribution='Normal', linear_flag=True, device='cpu'):
+    def __init__(self, dy, dy_ref, f_dec, d_embed=None, linear_flag=True, k_step=1, device='cpu'):
         super().__init__()
 
         self.dy = dy
         self.dy_ref = dy_ref
-        self.distribution = distribution
-        self.K = K
+        self.k_step = k_step
 
         "define the f_enc"
         if linear_flag:
@@ -19,10 +19,11 @@ class Align(nn.Module):
             if d_embed is None:
                 raise TypeError("uhoh you forgot to specify d_embed for the featurizer")
 
-            self.f_enc = Mlp(dy, d_embed, 128).to(device)
+            self.f_enc = Mlp(dy, d_embed, 64).to(device)
 
         self.f_dec = f_dec
 
+    # we only need this if we pass through the source decoder first
     # def compute_likelihood(self, decoder, x_samples, y):
     #     "compute likelihood function based on distribution of new dataset"
     #
@@ -50,7 +51,7 @@ class Align(nn.Module):
         log_k_step_prior = 0
 
         for t in range(x.shape[1] - 1):
-            K_ahead = min(self.K, x[:, t + 1:].shape[1])
+            K_ahead = min(self.k_step, x[:, t + 1:].shape[1])
             _, mu_k_ahead, var_k_ahead = ref_vae.prior.sample_k_step_ahead(x[:, t],
                                                                            K_ahead)
             log_k_step_prior = log_k_step_prior + torch.sum(
@@ -58,7 +59,7 @@ class Align(nn.Module):
 
         return log_k_step_prior
 
-    def forward(self, ref_vae, y, ref_ss=None):
+    def forward(self, ref_vae, y):
 
         # apply transformation to data
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
@@ -72,15 +73,8 @@ class Align(nn.Module):
         log_like = self.f_dec(x_samples, y)
 
         # get elbo for aligned data
-        loss = torch.mean(log_like + log_k_step_prior-log_q)
+        loss = torch.mean(log_like + log_k_step_prior - log_q)
 
-        # optionally compute wasserstein
-        # if ref_ss is not None:
-        #     mu = torch.mean(x_samples.reshape(x_samples.shape[-1], -1), 1, keepdim=True)
-        #     cov = torch.cov(x_samples.reshape(x_samples.shape[-1], -1))
-        #     w2 = compute_wasserstein(*ref_ss, mu, cov)
-        #     return -loss + w2
-        # else:
         return -loss
 
 
