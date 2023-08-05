@@ -151,4 +151,4 @@ class DualAnimalSeqVae(nn.Module):
         if not align_mode:
             return ref_neg_elbo + other_neg_elbo + reg_weight * reg
         else:
-            return other_neg_elbo
+            return other_neg_elbo + reg_weight * reg

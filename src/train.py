@@ -105,7 +105,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     return vae, training_losses
 
 
-def alignment_training(ref_vae, align, train_dataloader, ref_ss=None, n_epochs=100, lr=1e-3):
+def alignment_training(ref_vae, align, train_dataloader, n_epochs=100, lr=1e-3):
     """
     function for training alignment parameters
     :param ref_vae: pre-trained vae
@@ -113,7 +113,6 @@ def alignment_training(ref_vae, align, train_dataloader, ref_ss=None, n_epochs=1
     :param train_dataloader: a dataloader object
     :param ref_ss: sufficient stats for reference latents
     """
-    assert isinstance(ref_vae, SeqVae)
     assert isinstance(train_dataloader, SeqDataLoader)
     assert train_dataloader.shuffle
 
@@ -124,7 +123,7 @@ def alignment_training(ref_vae, align, train_dataloader, ref_ss=None, n_epochs=1
     for _ in tqdm(range(n_epochs)):
         for y, in train_dataloader:
             opt.zero_grad()
-            loss = align(ref_vae, y.to(ref_vae.device), ref_ss)
+            loss = align(ref_vae, y.to(ref_vae.device))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(align.parameters(),
                                            max_norm=1., norm_type=2)
