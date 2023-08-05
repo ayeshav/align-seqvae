@@ -71,3 +71,12 @@ def get_matrix_sqrt(cov):
     lam, Q = torch.linalg.eigh(cov)
     return Q@torch.diag(torch.sqrt(lam))@Q.T
 
+
+def normalize(y):
+    dy = y.shape[-1]
+
+    mu = torch.mean(y.reshape(-1, dy), 0, keepdim=True)
+    sigma = torch.std(y.reshape(-1, dy), 0, keepdim=True)
+    y_norm = (y - mu) / sigma
+
+    return y_norm
