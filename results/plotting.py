@@ -47,7 +47,7 @@ def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', 
     function to compute k-step prediction performance
     :param vae: trained vae
     :param y_test: test observations of shape K x T x dy
-    :param T_train: train time steps for the encoder to get x_T
+    :param T_train: number of time steps for input to the encoder
     :param k_step: number of prediction steps
     :param distribution: likelihood distribution
     :param logrates: test logrates torch.sigmoid(x@C + b) if distribution is Binomial
@@ -56,6 +56,14 @@ def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', 
     :return r2 of shape W x k_step x dy, where W is the number of T_train windows
     """
     with torch.no_grad():
+
+        if distribution == 'Normal':
+            # get k-step y_true of shape K x k_step x dy x W
+            y_true = y_test[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
+
+        elif distribution == 'Binomial':
+            y_true = logrates[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
+
         if align is not None:
             y_test = align.f_enc(y_test)
             decoder = align.f_dec
@@ -67,7 +75,7 @@ def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', 
 
         r2_ys = []
 
-        # iterate over W windows of size T_train
+        # iterate over W windows
         for i in range(y_in.shape[-1]):
 
             # get x_{t+T_train} from y_{t:t+T_train}
@@ -77,15 +85,8 @@ def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', 
             x_k_ahead, _, _ = vae.prior.sample_k_step_ahead(x[:, -1, :][:, np.newaxis, :], k_step, True)
 
             y_pred = decoder.compute_param(torch.hstack(x_k_ahead)) # shape K x k_step x dy
-
             if distribution == 'Normal':
                 y_pred = y_pred[0]
-
-                # get k-step y_true of shape K x k_step x dy x W
-                y_true = y_test[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
-
-            elif distribution == 'Binomial':
-                y_true = logrates[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
 
             r2_ys.append(compute_r2(y_pred, y_true[..., i]))
 
