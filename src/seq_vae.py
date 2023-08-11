@@ -127,7 +127,38 @@ class DualAnimalSeqVae(nn.Module):
         elbo = torch.mean(log_like + beta * (log_prior - log_q))
         return x_samples, -elbo
 
-    def forward(self, y_ref, y_other, beta=1., align_mode=False, reg_weight=100):
+    def compute_regularizer(self, x_ref_samples, x_other_samples, velocity=False):
+
+        dx = x_ref_samples.shape[-1]
+
+        mu_ref = torch.mean(x_ref_samples.view(-1, dx), 0)
+        cov_ref = torch.cov(x_ref_samples.view(-1, dx).T)
+
+        mu_other = torch.mean(x_other_samples.view(-1, dx), 0)
+        cov_other = torch.cov(x_other_samples.view(-1, dx).T)
+
+        # compute Wassertein
+        reg_shape = compute_wasserstein(mu_ref, cov_ref,
+                                        mu_other, cov_other)
+
+        if velocity:
+            vel_ref = self.prior.compute_param(x_ref_samples)[0] - x_ref_samples
+            vel_other = self.prior.compute_param(x_other_samples)[0] - x_other_samples
+
+            mu_ref = torch.mean(vel_ref.view(-1, dx), 0)
+            cov_ref = torch.cov(vel_ref.view(-1, dx).T)
+
+            mu_other = torch.mean(vel_other.view(-1, dx), 0)
+            cov_other = torch.cov(vel_other.view(-1, dx).T)
+
+            reg_vel = compute_wasserstein(mu_ref, cov_ref,
+                                          mu_other, cov_other)
+
+            return reg_shape + reg_vel
+        else:
+            return reg_shape
+
+    def forward(self, y_ref, y_other, beta=1., align_mode=False, reg_weight=100, velocity=False):
         """
         In the forward method, we compute the negative elbo and return it back
         :param y: Y is a tensor of observations of size Batch by Time by Dy
@@ -136,19 +167,12 @@ class DualAnimalSeqVae(nn.Module):
         # ref animal elbo
         x_ref_samples, ref_neg_elbo = self.ref_animal_loss(y_ref, beta=beta)
 
-        mu_ref = torch.mean(x_ref_samples.view(-1, x_ref_samples.shape[-1]), 0)
-        cov_ref = torch.cov(x_ref_samples.view(-1, x_ref_samples.shape[-1]).T)
-
         # other animal elbo
         x_other_samples, other_neg_elbo = self.other_animal_loss(y_other, beta=beta)
-        mu_other = torch.mean(x_other_samples.view(-1, x_other_samples.shape[-1]), 0)
-        cov_other = torch.cov(x_other_samples.view(-1, x_other_samples.shape[-1]).T)
 
-        # compute Wassertein
-        reg = compute_wasserstein(mu_ref, cov_ref,
-                                  mu_other, cov_other)
+        reg = self.compute_regularizer(x_ref_samples, x_other_samples, velocity=velocity)
 
         if not align_mode:
-            return ref_neg_elbo + other_neg_elbo + reg_weight * reg
+            return ref_neg_elbo + other_neg_elbo + reg_weight * reg, ref_neg_elbo, other_neg_elbo, reg_weight * reg
         else:
-            return other_neg_elbo + reg_weight * reg
+            return other_neg_elbo
