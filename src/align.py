@@ -23,49 +23,67 @@ class Align(nn.Module):
 
         self.f_dec = f_dec
 
-    # we only need this if we pass through the source decoder first
-    # def compute_likelihood(self, decoder, x_samples, y):
-    #     "compute likelihood function based on distribution of new dataset"
-    #
-    #     obsv_params = decoder.compute_param(x_samples)
-    #
-    #     if self.distribution == "Normal":
-    #         mu_obsv, var_obsv = obsv_params
-    #
-    #         mu_obsv_tfm = self.f_dec_mean(mu_obsv)
-    #         var_obsv_tfm = torch.exp(self.f_dec_var(var_obsv))
-    #         log_like = torch.sum(Normal(loc=mu_obsv_tfm,
-    #                                     scale=torch.sqrt(var_obsv_tfm)).log_prob(y), (-1, -2))
-    #
-    #     elif self.distribution == "Binomial":
-    #         lograte = obsv_params
-    #         lograte_tfm = self.f_dec_mean(lograte)
-    #
-    #         log_like = torch.sum(Binomial(total_count=decoder.total_count,
-    #                                       probs=torch.sigmoid(lograte_tfm)).log_prob(y), (-1, -2))
-    #
-    #     return log_like
+    def compute_log_q(self, ref_vae, y):
 
-    def compute_log_prior(self, ref_vae, x):
+        x_samples, mu, var = ref_vae.encoder.sample(y)
 
-        log_k_step_prior = 0
+        if self.k_step == 1:
+            log_q = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_samples), (-2, -1))
+        else:
+            x_k_step = x_samples[:, 1:].unfold(1, self.k_step, 1).permute(0, 1, 3, 2)
+            mu_k_step = mu[:, 1:].unfold(1, self.k_step, 1).permute(0, 1, 3, 2)
+            var_k_step = var[:, 1:].unfold(1, self.k_step, 1).permute(0, 1, 3, 2)
 
-        for t in range(x.shape[1] - 1):
-            K_ahead = min(self.k_step, x[:, t + 1:].shape[1])
-            _, mu_k_ahead, var_k_ahead = ref_vae.prior.sample_k_step_ahead(x[:, t],
-                                                                           K_ahead)
-            log_k_step_prior = log_k_step_prior + torch.sum(
-                Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x[:, t + K_ahead]), -1)
+            log_q = (1/self.k_step) * torch.sum(Normal(mu_k_step, torch.sqrt(var_k_step)).log_prob(x_k_step), (1, 2, 3))
+
+            for i in torch.arange(self.k_step - 1):
+                temp = torch.sum(Normal(mu[:, -self.k_step+i+1:], torch.sqrt(var[:, -self.k_step+i+1:])).log_prob(x_samples[:, -self.k_step+i+1:]), (-1,-2))
+                log_q = log_q + temp/(self.k_step-1-i)
+
+        return x_samples, mu, var, log_q
+
+    def compute_log_prior(self, ref_vae, x_samples):
+        """
+        function to compute multi-step prediction (1/K) * sum_{i=1:K} p(x_{t+k} | x_t)
+        """
+
+        dx = x_samples.shape[-1]
+
+        if self.k_step == 1:
+            log_k_step_prior = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                         torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
+            log_k_step_prior = log_k_step_prior + self.prior(x_samples[:, :-1], x_samples[:, 1:])
+
+        else:
+            # get vectorized k-step windows of x_samples BW x k_step x dx
+            x_samples_k_step = x_samples[:, 1:].unfold(1, self.k_step, 1).permute(0, 1, 3, 2).reshape(-1, self.k_step, dx)
+
+            _, mu_k_ahead, var_k_ahead = ref_vae.prior.sample_k_step_ahead(x_samples[:, :-self.k_step].reshape(-1, dx).unsqueeze(1),
+                                                                                   self.k_step, True)
+
+            log_k_step_prior = Normal(torch.hstack(mu_k_ahead), torch.sqrt(torch.vstack(var_k_ahead))).log_prob(x_samples_k_step)
+            log_k_step_prior = torch.sum(log_k_step_prior.reshape(x_samples.shape[0], -1, self.k_step, dx),(1, 2, 3))/self.k_step
+
+            #TODO: can we remove this loop?
+            for i in torch.arange(self.k_step - 1):
+                K_ahead = min(self.k_step, x_samples[:, -self.k_step+i+1:].shape[1])
+
+                _, mu_k, var_k = ref_vae.prior.sample_k_step_ahead(x_samples[:, -self.k_step + i].reshape(-1, dx).unsqueeze(1), K_ahead, True)
+
+                log_prior = torch.sum(Normal(torch.hstack(mu_k), torch.sqrt(torch.vstack(var_k))).log_prob(
+                                x_samples[:, -self.k_step + i + 1:].reshape(-1, K_ahead, dx)), (-1, -2))
+
+                log_k_step_prior = log_k_step_prior + log_prior/K_ahead
 
         return log_k_step_prior
 
-    def forward(self, ref_vae, y):
+    def forward(self, ref_vae, y, beta=1.0):
 
         # apply transformation to data
         y_tfm = self.f_enc(y)  # apply linear transformation to new dataset
 
         # pass to encoder and get samples
-        x_samples, _, _, log_q = ref_vae.encoder(y_tfm)  # for the given dataset
+        x_samples, _, _, log_q = self.compute_log_q(ref_vae, y_tfm)
 
         log_k_step_prior = self.compute_log_prior(ref_vae, x_samples)
 
@@ -73,7 +91,7 @@ class Align(nn.Module):
         log_like = self.f_dec(x_samples, y)
 
         # get elbo for aligned data
-        loss = torch.mean(log_like + log_k_step_prior - log_q)
+        loss = torch.mean(log_like + beta * (log_k_step_prior - log_q))
 
         return -loss
 
