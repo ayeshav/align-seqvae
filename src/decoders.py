@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.distributions import Normal, Binomial
+from torch.distributions import Normal, Binomial, Poisson
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -41,7 +41,24 @@ class BinomialDecoder(nn.Module):
 
     def forward(self, samples, x):
         probs = self.compute_param(samples)
-        log_prob = torch.sum(Binomial(total_count=self.total_count, probs=probs).log_prob(x))
+        log_prob = torch.sum(Binomial(total_count=self.total_count, probs=probs).log_prob(x), (-1,-2))
+        return log_prob
+
+
+class PoissonDecoder(nn.Module):
+    def __init__(self, dx, dy, device='cpu'):
+        super(PoissonDecoder, self).__init__()
+        self.device = device
+        self.decoder = nn.Linear(dx, dy).to(device)
+
+    def compute_param(self, x):
+        log_rates = self.decoder(x)
+        rates = Softplus(log_rates)
+        return rates
+
+    def forward(self, samples, x):
+        rates = self.compute_param(samples)
+        log_prob = torch.sum(Poisson(rates).log_prob(x), (-1,-2))
         return log_prob
 
 
