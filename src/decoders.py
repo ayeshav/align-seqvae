@@ -10,7 +10,7 @@ class NormalDecoder(nn.Module):
     def __init__(self, dx, dy, device='cpu'):
         super().__init__()
         self.device = device
-        self.decoder = nn.Sequential(nn.Linear(dx, dy)).to(device)
+        self.decoder = nn.Linear(dx, dy).to(device)
         self.logvar = nn.Parameter(0.01 * torch.randn(1, dy, device=device), requires_grad=True)
 
     def compute_param(self, x):
@@ -53,7 +53,7 @@ class PoissonDecoder(nn.Module):
 
     def compute_param(self, x):
         log_rates = self.decoder(x)
-        rates = Softplus(log_rates)
+        rates = Softplus(log_rates) + eps
         return rates
 
     def forward(self, samples, x):

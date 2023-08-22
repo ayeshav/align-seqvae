@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
+from sklearn.decomposition import FactorAnalysis
 
+eps = 1e-6
 
 class SeqDataLoader:
     def __init__(self, data_tuple, batch_size, shuffle=True):
@@ -80,3 +82,12 @@ def normalize(y):
     y_norm = (y - mu) / sigma
 
     return y_norm
+
+
+def init_decoder(decoder, y, dx):
+
+    fa = FactorAnalysis(n_components=dx)
+    fa.fit(y.reshape(-1, y.shape[2]))
+
+    decoder.decoder.weight.data = torch.from_numpy(fa.components_).float().T
+    decoder.decoder.bias.data = torch.log(y.mean(0).max(0)[0] + eps)
