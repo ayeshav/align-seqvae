@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from sklearn.decomposition import FactorAnalysis
+from einops import rearrange
 
 eps = 1e-6
 
@@ -91,3 +92,20 @@ def init_decoder(decoder, y, dx):
 
     decoder.decoder.weight.data = torch.from_numpy(fa.components_).float().T
     decoder.decoder.bias.data = torch.log(y.mean(0).max(0)[0] + eps)
+
+
+def vectorize_x(x, k):
+    """
+    function to vectorize tensor
+    :param x: input of shape (B by T by dx) or (n_samples by B by T by dx)
+    :param k: number of prediction steps
+    :returns: tensor of shape (B x T-k) by k by dx (n_samples x B x T-k) by k by dx
+    """
+    if len(x.shape) > 3:
+        # get windows of size k for each sample, trial and time point
+        x_unfold = x.unfold(2, k, 1)
+        return rearrange(x_unfold, 'n_s batch time neuron k -> n_s (batch time) k neuron')
+    else:
+        # get windows of size k for each trial and time point
+        x_unfold = x.unfold(1, k, 1)
+        return rearrange(x_unfold, 'batch time neuron k -> (batch time) k neuron')
