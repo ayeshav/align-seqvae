@@ -14,8 +14,8 @@ class Encoder(nn.Module):
         self.dx = dx
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=dy,
-                          hidden_size=dh, bidirectional=True).to(device)
+        self.gru = nn.GRU(input_size=dy, hidden_size=dh,
+                          bidirectional=True, batch_first=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
@@ -29,7 +29,6 @@ class Encoder(nn.Module):
         h = h.view(x.shape[0], x.shape[1], 2, self.dh)
         h_cat = torch.cat((h[:, :, 0], h[:, :, 1]), -1)  # TODO: can we achieve this with one view
         out = self.readout(h_cat)
-
         mu, logvar = torch.split(out, [self.dx, self.dx], -1)
         var = Softplus(logvar) + eps
         return mu, var
@@ -71,8 +70,8 @@ class EmbeddingEncoder(nn.Module):
                                              nn.Linear(dh, d_embed)]).to(device)
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=d_embed,
-                          hidden_size=dh, bidirectional=True).to(device)
+        self.gru = nn.GRU(input_size=d_embed, hidden_size=dh,
+                          bidirectional=True, batch_first=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
@@ -136,8 +135,8 @@ class DualAnimalEncoder(nn.Module):
         self.f_enc = nn.Linear(dy_other, dy).to(device)
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=dy,
-                          hidden_size=dh, bidirectional=True).to(device)
+        self.gru = nn.GRU(input_size=dy, hidden_size=dh,
+                          bidirectional=True, batch_first=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
@@ -217,8 +216,8 @@ class DualAnimalEmbeddingEncoder(nn.Module):
                                      nn.Linear(dh, d_embed)]).to(device)
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=d_embed,
-                          hidden_size=dh, bidirectional=True).to(device)
+        self.gru = nn.GRU(input_size=d_embed, hidden_size=dh,
+                          bidirectional=True, batch_first=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
 
