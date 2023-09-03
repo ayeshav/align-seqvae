@@ -6,6 +6,87 @@ Softplus = torch.nn.Softplus()
 eps = 1e-6
 
 
+class PriorRNN(nn.Module):
+    def __init__(self, dx, dh, residual=True, fixed_variance=True, du=0, device='cpu'):
+        super().__init__()
+
+        self.dx = dx
+        self.dh = dh
+        self.du = du
+
+        self.residual = residual
+        self.fixed_variance = fixed_variance
+
+        if fixed_variance:
+            self.logvar = nn.Parameter(-2 * torch.randn(1, dx, device=device), requires_grad=True)
+            d_out = dx
+        else:
+            d_out = 2 * dx
+
+        self.prior = nn.GRU(dx + du, dh, batch_first=True, device=device)
+        self.readout = nn.Linear(dh, d_out, device=device)
+
+        self.device = device
+
+    def compute_param(self, x, h0=None):
+        """
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        assert x.shape[-1] == self.dx + self.du
+
+        h, _ = self.prior(x, h0)
+        out = self.readout(h)
+
+        if self.fixed_variance:
+            mu = out
+            var = Softplus(self.logvar) + eps
+        else:
+            mu, logvar = torch.split(out, [self.dx, self.dx], -1)
+            var = Softplus(logvar) + eps
+
+        if self.residual:
+            x, u = torch.split(x, [self.dx, self.du], -1)
+            mu = mu + x
+        return mu, var, h
+
+    def forward(self, x_prev, x):
+        """
+        Given data, we compute the log-density of the time series
+        :param x: X is a tensor of observations of shape Batch by Time by Dimension
+        :return:
+        """
+        mu, var, _ = self.compute_param(x_prev)
+        log_prob = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x), (-2, -1))
+        return log_prob
+
+    def sample_k_step_ahead(self, x, K, u=None, keep_trajectory=False):
+        x_trajectory, means, vars = [], [], []
+
+        # get h0 for t=0
+        mu, var, h0 = self.compute_param(x, h0=None)
+
+        means.append(mu)
+        vars.append(var)
+        x_trajectory.append(mu + torch.sqrt(var) * torch.randn(mu.shape, device=x.device))
+
+        for t in torch.arange(1, K):
+            if u is not None:
+                mu, var, h0 = self.compute_param(torch.cat((x_trajectory[-1], u[:, t-1].unsqueeze(1)), -1),
+                                                 h0.permute(1, 0, 2))
+            else:
+                mu, var, h0 = self.compute_param(x_trajectory[-1], h0.permute(1, 0, 2))
+
+            means.append(mu)
+            vars.append(var)
+            x_trajectory.append(mu + torch.sqrt(var) * torch.randn(mu.shape, device=x.device))
+
+        if keep_trajectory:
+            return torch.hstack(x_trajectory), torch.hstack(means), torch.vstack(vars)
+        else:
+            return x_trajectory[-1], means[-1], vars[-1]
+
+
 class Prior(nn.Module):
     def __init__(self, dx, residual=True, fixed_variance=True, du=0, device='cpu'):
         super().__init__()
