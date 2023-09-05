@@ -75,22 +75,20 @@ class CondSeqVae(nn.Module):
         if self.k_step == 1:
             log_q = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_samples), (-2, -1))
         else:
-            log_q0 = torch.sum(Normal(mu[:, 0, :], torch.sqrt(var)).log_prob(x_samples[:, 0, :]), -1)
 
             x_k = vectorize_x(x_samples[:, 1:], self.k_step)
             mu_k = vectorize_x(mu[:, 1:], self.k_step)
-
-            var_k_step = var.repeat(self.k_step, 1)
+            var_k_step = vectorize_x(var[:, 1:], self.k_step)
 
             "mean across k steps"
             log_q = torch.mean(Normal(mu_k, torch.sqrt(var_k_step)).log_prob(x_k), -2)
 
             "sum across time and dx"
-            log_q = log_q0 + torch.sum(log_q.reshape(mu.shape[0], -1, mu.shape[2]), (-1, -2))
+            log_q = torch.sum(log_q.reshape(mu.shape[0], -1, mu.shape[2]), (-1, -2))
 
             for i in torch.arange(self.k_step - 1):
                 K_ahead = self.k_step - i - 1
-                temp = torch.sum(Normal(mu[..., -K_ahead:, :], torch.sqrt(var)).log_prob(
+                temp = torch.sum(Normal(mu[..., -K_ahead:, :], torch.sqrt(var)[..., -K_ahead:, :]).log_prob(
                     x_samples[..., -K_ahead:, :]), (-1, -2))
                 log_q = log_q + temp / K_ahead
 
@@ -103,13 +101,10 @@ class CondSeqVae(nn.Module):
         dx = x_samples.shape[-1]
         du = u.shape[-1]
 
-        log_prior0 = torch.sum(Normal(torch.zeros(1, device=self.device),
-                                      torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
-
         x_prev = torch.cat((x_samples[:, :-self.k_step], u[:, :-self.k_step]), axis=-1)
 
         if self.k_step == 1:
-            log_k_step_prior = log_prior0 + self.prior(x_prev, x_samples[..., 1:, :])
+            log_k_step_prior = self.prior(x_prev, x_samples[..., 1:, :])
 
         else:
             # get vectorized k-step windows of x_samples BW x k_step x dx
@@ -123,7 +118,7 @@ class CondSeqVae(nn.Module):
             log_k_step_prior = torch.mean(Normal(mu_k_ahead, torch.sqrt(var_k_ahead)).log_prob(x_k), -2)
 
             # sum along time and dx
-            log_k_step_prior = log_prior0 + torch.sum(log_k_step_prior.reshape(x_samples.shape[-3], -1, dx), (-1, -2))
+            log_k_step_prior = torch.sum(log_k_step_prior.reshape(x_samples.shape[-3], -1, dx), (-1, -2))
 
             # compute prediction for the last k-1 steps
             for i in torch.arange(self.k_step - 1):
@@ -150,6 +145,12 @@ class CondSeqVae(nn.Module):
         # pass data through encoder and get mean, variance, samples and log density
         x_samples, mu, var, log_q = self._compute_k_step_log_q(torch.cat((y, u), -1))
 
+        log_prior_0 = torch.sum(Normal(torch.zeros(1, device=self.device),
+                                       0.5 * torch.ones(1, device=self.device)).log_prob(x_samples[:, 0]), -1)
+        log_q_0 = torch.sum(Normal(mu[:, 0], torch.sqrt(var[:, 0])).log_prob(x_samples[:, 0]), -1)
+
+        kl_0 = log_prior_0 - log_q_0
+
         # given samples, compute the log prior
         log_prior = self._compute_k_step_log_prior(x_samples, u)
 
@@ -157,11 +158,12 @@ class CondSeqVae(nn.Module):
         log_like = self.decoder(x_samples, y)
 
         # compute the elbo
-        elbo = torch.mean(log_like + beta * (log_prior - log_q))
+        elbo = torch.mean(log_like + beta * (kl_0 + log_prior - log_q))
 
         if y_behav is not None:
-            mse_behav = torch.sum((y_behav - self.readout_behav(x_samples)) ** 2, (-1, -2))
-            return -elbo + 10 * torch.mean(mse_behav)
+            log_like_behav = self.readout_behav(x_samples, y_behav)
+
+            return -elbo - torch.mean(log_like_behav)
         else:
             return -elbo
 
