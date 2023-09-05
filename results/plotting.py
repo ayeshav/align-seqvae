@@ -82,9 +82,9 @@ def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', 
             x = vae.encoder.sample(y_in[..., i])[0]
 
             # sample k_steps from x_{t+T_train}
-            x_k_ahead, _, _ = vae.prior.sample_k_step_ahead(x[:, -1, :][:, np.newaxis, :], k_step, True)
-
-            y_pred = decoder.compute_param(torch.hstack(x_k_ahead)) # shape K x k_step x dy
+            x_k_ahead, _, _ = vae.prior.sample_k_step_ahead(x[:, -1, :][:, np.newaxis, :], k_step,
+                                                            keep_trajectory=True)
+            y_pred = decoder.compute_param(x_k_ahead) # shape K x k_step x dy
             if distribution == 'Normal':
                 y_pred = y_pred[0]
 
