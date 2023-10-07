@@ -1,9 +1,14 @@
+import numpy as np
+import numpy.random as npr
+
 import torch
 import torch.nn as nn
 from sklearn.decomposition import FactorAnalysis
 from einops import rearrange
 
+npr.seed(42)
 eps = 1e-6
+
 
 class SeqDataLoader:
     def __init__(self, data_tuple, batch_size, shuffle=True):
@@ -57,6 +62,14 @@ class Mlp(nn.Module):
         return self.net(x)
 
 
+def to_device(batch, device='cpu'):
+
+    if len(batch) > 1:
+        return [batch[i].to(device) for i in range(len(batch))]
+    else:
+        return batch[0].to(device)
+
+
 def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
     "function to compute wasserstein assuming P_s and P_t are independent gaussians"
     sqrt_cov_s = get_matrix_sqrt(cov_s)
@@ -80,7 +93,7 @@ def normalize(y):
 
     mu = torch.mean(y.reshape(-1, dy), 0, keepdim=True)
     sigma = torch.std(y.reshape(-1, dy), 0, keepdim=True)
-    y_norm = (y - mu) / sigma
+    y_norm = (y - mu) / (sigma + eps)
 
     return y_norm
 
@@ -94,18 +107,13 @@ def init_decoder(decoder, y, dx):
     decoder.decoder.bias.data = torch.log(y.mean(0).max(0)[0] + eps)
 
 
-def vectorize_x(x, k):
+def vectorize(x, k):
     """
     function to vectorize tensor
-    :param x: input of shape (B by T by dx) or (n_samples by B by T by dx)
+    :param x: input of shape (B by T by dx)
     :param k: number of prediction steps
-    :returns: tensor of shape (B x T-k) by k by dx (n_samples x B x T-k) by k by dx
+    :returns: tensor of shape (B x T-k) by k by dx
     """
-    if len(x.shape) > 3:
-        # get windows of size k for each sample, trial and time point
-        x_unfold = x.unfold(2, k, 1)
-        return rearrange(x_unfold, 'n_s batch time neuron k -> n_s (batch time) k neuron')
-    else:
-        # get windows of size k for each trial and time point
-        x_unfold = x.unfold(1, k, 1)
-        return rearrange(x_unfold, 'batch time neuron k -> (batch time) k neuron')
+    # get windows of size k for each trial and time point
+    x_unfold = x.unfold(1, k, 1)
+    return rearrange(x_unfold, 'batch time neuron k -> (batch time) k neuron')
