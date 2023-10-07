@@ -103,7 +103,7 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     return vae, training_losses
 
 
-def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500, lr=1e-3):
+def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500, lr=1e-3, weight_decay=1e-4):
     """
     function for training alignment parameters
     :param ref_vae: pre-trained vae
@@ -115,7 +115,7 @@ def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500,
 
     training_losses = []
     opt = torch.optim.AdamW(params=align.parameters(),
-                            lr=lr, weight_decay=1e-4)
+                            lr=lr, weight_decay=weight_decay)
 
     for _ in tqdm(range(n_epochs)):
         for batch in train_dataloader:
