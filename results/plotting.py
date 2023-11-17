@@ -42,63 +42,82 @@ def compute_r2(y_pred, y_true):
     return 1 - res.sum(0) / var.sum(0)
 
 
-def compute_k_step_pred(vae, y_test, T_train, k_step=30, distribution='Normal', logrates=None, align=None):
+def get_y_tfm(y, obj, method='align'):
+    with torch.no_grad():
+        if method == 'align' or method == 'align_k1':
+            y_tfm = obj.g(y)
+
+        elif method == 'mla':
+            y_tfm = obj.low_d_readin_t(y)
+
+        elif method == 'nomad':
+            y_in = obj.read_in(y)
+            y_tfm = obj.align(y_in)
+
+        elif method == 'cycle-gan':
+            y_tfm = obj(y)
+
+        elif method == 'cca' or method == 'op':
+            y_tfm = obj.tfm(y)
+
+        elif method == 'retrain':
+            y_tfm = y
+
+        else:
+            print('not implemented! or key error! go figure..')
+
+    return y_tfm
+
+
+def compute_prediction_r2(logrates, y_preds, T, k):
+    """
+    y_preds is of shape K x k_step x dy x W
+    """
+
+    dy = logrates.shape[-1]
+
+    y_true = logrates[:, T:].unfold(1, k, 1).permute(1, 0, 3, 2)
+
+    y_bar = logrates[:, :T].mean(1, keepdim=True)
+
+    var = (y_true - y_bar) ** 2
+    res = (y_preds - y_true) ** 2
+
+    res = res.reshape(-1, k, dy)
+    var = var.reshape(-1, k, dy)
+
+    return 1 - res.sum(0) / var.sum(0)
+
+
+def generate_k_step_pred(vae, y_test, T_train, k_step, decoder, align=None, method='align'):
     """
     function to compute k-step prediction performance
     :param vae: trained vae
     :param y_test: test observations of shape K x T x dy
     :param T_train: number of time steps for input to the encoder
     :param k_step: number of prediction steps
-    :param distribution: likelihood distribution
-    :param logrates: test logrates torch.sigmoid(x@C + b) if distribution is Binomial
-    :param align: optional align if y needs to be transformed
-
-    :return r2 of shape W x k_step x dy, where W is the number of T_train windows
+    :param align: optional align obj if y needs to be transformed
+    :param method: possible args are 'align_k1', 'align', 'mla', 'nomad', 'cycle-gan', 'op'
+    :return y_pred
     """
+    y_preds = []
+
     with torch.no_grad():
 
-        if distribution == 'Normal':
-            # get k-step y_true of shape K x k_step x dy x W
-            y_true = y_test[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
+        if method != 'retrain':
+            y_test = get_y_tfm(y_test, align, method=method)
 
-        elif distribution == 'Binomial':
-            y_true = logrates[:, T_train:].unfold(1, k_step, 1).permute(0, 3, 2, 1)
-
-        if align is not None:
-            y_test = align.f_enc(y_test)
-            decoder = align.f_dec
-        else:
-            decoder = vae.decoder
-
-        # form windows of size T_train to get y of shape K x T_train x dy x W
         y_in = y_test[:, :-k_step, :].unfold(1, T_train, 1).permute(0, 3, 2, 1)
 
-        r2_ys = []
-
-        # iterate over W windows
         for i in range(y_in.shape[-1]):
 
-            # get x_{t+T_train} from y_{t:t+T_train}
             x = vae.encoder.sample(y_in[..., i])[0]
-
-            # sample k_steps from x_{t+T_train}
             x_k_ahead, _, _ = vae.prior.sample_k_step_ahead(x[:, -1, :][:, np.newaxis, :], k_step,
                                                             keep_trajectory=True)
-            y_pred = decoder.compute_param(x_k_ahead) # shape K x k_step x dy
-            if distribution == 'Normal':
+            y_pred = decoder.compute_param(x_k_ahead)  # shape K x k_step x dy
+
+            if type(y_pred) == tuple:
                 y_pred = y_pred[0]
 
-            r2_ys.append(compute_r2(y_pred, y_true[..., i]))
-
-    return torch.stack(r2_ys)
-
-
-def plot_k_step_pred(r2_y, fig=None, ax=None, figsize=None):
-    if ax is None:
-        fig, ax = plt.subplots(1, 1, figsize=figsize)
-
-    k_step = r2_y.shape[1]
-
-    ax.plot(np.arange(1, k_step + 1), torch.mean(r2_y, (0, 2)), 'o')
-
-    return ax
+            y_preds.append(y_pred)
+    return torch.stack(y_preds)
