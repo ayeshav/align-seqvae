@@ -1,9 +1,7 @@
-import numpy as np
 import numpy.random as npr
 
 import torch
 import torch.nn as nn
-from sklearn.decomposition import FactorAnalysis
 from einops import rearrange
 
 npr.seed(42)
@@ -70,24 +68,6 @@ def to_device(batch, device='cpu'):
         return batch[0].to(device)
 
 
-def compute_wasserstein(mu_s, cov_s, mu_t, cov_t):
-    "function to compute wasserstein assuming P_s and P_t are independent gaussians"
-    sqrt_cov_s = get_matrix_sqrt(cov_s)
-    temp_matrix = sqrt_cov_s @ cov_t @ sqrt_cov_s
-    sqrt_temp_matrix = get_matrix_sqrt(temp_matrix)
-
-    diff = (mu_s - mu_t) ** 2
-
-    w2 = torch.sum(diff) + torch.trace(cov_s) + torch.trace(cov_t) - 2 * torch.trace(sqrt_temp_matrix)
-    return w2
-
-
-def get_matrix_sqrt(cov):
-
-    lam, Q = torch.linalg.eigh(cov)
-    return Q@torch.diag(torch.sqrt(lam))@Q.T
-
-
 def normalize(y):
     dy = y.shape[-1]
 
@@ -98,22 +78,24 @@ def normalize(y):
     return y_norm
 
 
-def init_decoder(decoder, y, dx):
-
-    fa = FactorAnalysis(n_components=dx)
-    fa.fit(y.reshape(-1, y.shape[2]))
-
-    decoder.decoder.weight.data = torch.from_numpy(fa.components_).float().T
-    decoder.decoder.bias.data = torch.log(y.mean(0).max(0)[0] + eps)
-
-
 def vectorize(x, k):
     """
-    function to vectorize tensor
+    function to unfold and vectorize tensor for k step prediction
     :param x: input of shape (B by T by dx)
     :param k: number of prediction steps
     :returns: tensor of shape (B x T-k) by k by dx
     """
     # get windows of size k for each trial and time point
     x_unfold = x.unfold(1, k, 1)
-    return rearrange(x_unfold, 'batch time neuron k -> (batch time) k neuron')
+    return rearrange(x_unfold, 'batch time dx k -> (batch time) k dx')
+
+
+def tensorize(x, b):
+    """
+    function to tensorize an unfolded vector f
+    :param x: input of shape (B x T-k) by k by dx
+    :param k: number of prediction steps
+    :param b: batch size
+    :returns: tensor of shape B by T by dx
+    """
+    return rearrange(x, '(batch time) 1 dx -> batch time dx', batch=b)
