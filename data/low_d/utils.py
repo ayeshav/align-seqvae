@@ -7,6 +7,9 @@ torch.manual_seed(42)
 torch.random.manual_seed(42)
 npr.seed(0)
 
+sigmoid = lambda z: 1 / (1 + np.exp(-z))
+softplus = lambda z: np.log(1 + np.exp(z))
+
 
 def sim_noisy_vanderpol(K, T, sigma_x, mu=1.5, dt=1e-2):
     x = np.empty((K, T, 2))
@@ -46,3 +49,26 @@ def sim_lorenz(K, T, dt=1e-2, rho=28.0, sigma=10.0, beta=8.0/3.0):
         x[n, :, :] = states[1:]  # don't care about initial conditions
 
     return x
+
+
+def get_observations(x, C, b, sigma_y, noise_type='bernoulli', norm_latent=False, N_max=4):
+    K, T, dx = x.shape
+    dy = C.shape[1]
+
+    y = np.empty((K, T, dy))
+
+    if norm_latent:
+        mu = np.mean(x.reshape(-1, dx))[np.newaxis]
+        sigma = np.std(x.reshape(-1, dx))[np.newaxis]
+        x = (x - mu) / sigma
+
+    if noise_type == 'gaussian':
+        y = x @ C + sigma_y * npr.randn(K, T, dy)
+    elif noise_type == 'poisson':
+        log_rates = x @ C + b
+        y = npr.poisson(softplus(log_rates))
+    elif noise_type == 'bernoulli':
+        log_rates = x @ C + b
+        y = npr.binomial(N_max, sigmoid(log_rates))
+
+    return y, x
