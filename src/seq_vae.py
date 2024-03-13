@@ -18,14 +18,14 @@ class SeqVae(nn.Module):
         self.decoder = decoder
         self.device = device
 
-    def compute_k_step_log_q(self, y):
+    def compute_k_step_log_q(self, y, u=None):
 
-        x_samples, mu, var = self.encoder.sample(y)
+        x_samples, mu, var = self.encoder.sample(y, u=u)
 
         if self.k_step == 1:
             log_q = torch.sum(Normal(mu, torch.sqrt(var)).log_prob(x_samples), (-2, -1))
         else:
-            log_q = compute_k_step_log_q(x_samples, mu, var, self.k_step, method='multi_step')
+            log_q = compute_k_step_log_q(x_samples, mu, var, self.k_step)
 
         return x_samples, mu, var, log_q
 
@@ -36,7 +36,7 @@ class SeqVae(nn.Module):
         if self.k_step == 1:
             log_k_step_prior = self.prior(x_samples[:, :-1], x_samples[:, 1:, :self.prior.dx])
         else:
-            log_k_step_prior = compute_k_step_prior(x_samples, self.k_step, self.prior, method='multi_step')
+            log_k_step_prior = compute_k_step_prior(x_samples, self.k_step, self.prior)
 
         return log_k_step_prior
 
@@ -82,7 +82,8 @@ class CondSeqVae(SeqVae):
             y, u = batch
 
         # pass data through encoder and get mean, variance, samples and log density
-        x_samples, _, _, log_q = self.compute_k_step_log_q(torch.cat((y, u), -1))
+        # x_samples, _, _, log_q = self.compute_k_step_log_q(torch.cat((y, u), -1))
+        x_samples, _, _, log_q = self.compute_k_step_log_q(y, u)
 
         # given samples, compute the log prior
         log_prior = self.compute_k_step_log_prior(torch.cat((x_samples, u), -1))

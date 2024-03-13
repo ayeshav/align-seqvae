@@ -63,6 +63,7 @@ class PriorGru(nn.Module):
     def __init__(self, dx, dh, device='cpu'):
         super().__init__()
 
+        self.dx = dx
         self.dh = dh
 
         self.readin = nn.Linear(dx, dh, device=device)

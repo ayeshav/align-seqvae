@@ -71,7 +71,7 @@ class EmbeddingEncoder(nn.Module):
                                              nn.Linear(dh, d_embed)]).to(device)
 
         # GRU expects batch to be the first dimension
-        self.gru = nn.GRU(input_size=d_embed+du, hidden_size=dh,
+        self.gru = nn.GRU(input_size=d_embed + du, hidden_size=dh,
                           bidirectional=True, batch_first=True).to(device)
         self.readout = nn.Linear(2 * dh, 2 * dx).to(device)
         self.device = device
