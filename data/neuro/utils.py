@@ -45,7 +45,7 @@ def get_trialized_data(neurons, behavior, all_bins, all_bins_delay, trial_length
         spike_count_trial.append(spike_counts)
         velocity_trial.append(ds_velocity)
 
-    spike_count_trial = np.stack(spike_count_trial)
+    spike_count_trial = np.stack(spike_count_trial).transpose(0, 2, 1)
     velocity_trial = np.stack(velocity_trial)
     rates_trial = gaussian_filter1d(spike_count_trial.astype("float64"), smooth_factor, axis=1)
 

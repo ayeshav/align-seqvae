@@ -1,5 +1,6 @@
 import os
 import pickle
+import torch
 import re
 from utils import *
 
@@ -46,17 +47,16 @@ def process_co_reaching_data():
 
         session_name = re.search(r'full-(.*?).pkl', file).group(1)
 
-        data_co[session_name] = {'y': spikes,
-                                 'rates': rates,
-                                 'velocity': velocity,
-                                 'target': table[:, 1],
-                                 'angle': table[:, 2]}
+        data_co[session_name] = {'y': torch.from_numpy(spikes).float(),
+                                 'rates': torch.from_numpy(rates).float(),
+                                 'velocity': torch.from_numpy(velocity).float(),
+                                 'target': torch.from_numpy(table[:, 1].astype(int)),
+                                 'angle': torch.from_numpy(table[:, 2]).float()}
 
     if not os.path.exists(savepath):
         os.mkdir(savepath)
 
-    with open(os.path.join(savepath + f'co_reaching_{align_event}.pkl'), 'wb') as f:
-        pickle.dump(data_co, f)
+    torch.save(data_co, savepath + f'co_reaching_{align_event}.pt')
 
 
 if __name__ == "__main__":
