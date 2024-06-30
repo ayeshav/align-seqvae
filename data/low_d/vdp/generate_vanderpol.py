@@ -1,17 +1,20 @@
+import sys
+sys.path.append('../')
+
 import numpy as np
 import numpy.random as npr
 import torch
 from tqdm import tqdm
-from ..utils import *
+from utils import *
 
 torch.manual_seed(42)
 torch.random.manual_seed(42)
 npr.seed(0)
 
-noise_type = 'gaussian'
+noise_type = 'binomial'
 
 sigma_y = 0.1  # observation noise
-dt = 0.01  # euler integration time step
+dt = 0.1  # euler integration time step
 K = 2_000  # number of batches
 T = 300  # length of time series
 
@@ -25,7 +28,7 @@ dx = 2
 "different number of observations for sessions/animals"
 if noise_type == 'gaussian':
     dys = [40, 35, 55]
-elif noise_type == 'bernoulli' or noise_type == 'poisson':
+elif noise_type == 'binomial' or noise_type == 'poisson':
     dys = [250, 250, 200, 300]
 
 t_eval = np.arange(0, (T + 1) * dt, dt)
@@ -35,8 +38,12 @@ data_all = []
 for dy in tqdm(dys):
     x = sim_noisy_vanderpol(K, T, sigma_x, mu=mu, dt=dt)
 
-    C = npr.randn(dx, dy) / np.sqrt(dx)
-    b = np.zeros(1, dy)
+    if noise_type == 'binomial':
+        C = 4 * npr.rand(dx, dy) - 2
+    else:
+        C = npr.randn(dx, dy) / np.sqrt(dx)
+
+    b = np.zeros((1, dy))
 
     y, x = get_observations(x, C, b, sigma_y, noise_type=noise_type)
 

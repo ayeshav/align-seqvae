@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
-from utils import vectorize
-from vae_utils import *
+
+from src.vae_utils import *
 
 Softplus = torch.nn.Softplus()
 eps = 1e-6
@@ -76,6 +76,8 @@ class CondSeqVae(SeqVae):
         :param y_behav: tensor of behavior (example, hand velocity) of size B x T x Y_behav
         :return:
         """
+        # TODO: test after re-factoring
+
         if len(batch) > 2:
             y, u, y_behav = batch
         else:

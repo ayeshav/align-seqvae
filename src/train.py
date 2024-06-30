@@ -1,8 +1,7 @@
 import torch
 from tqdm import tqdm
-from seq_vae import *
-from utils import *
-
+from src.utils import *
+from src.seq_vae import *
 
 def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
                  weight_decay=1e-4, beta=1.0):
@@ -33,18 +32,16 @@ def vae_training(vae, train_dataloader, n_epochs=100, lr=5e-4,
     return vae, training_losses
 
 
-def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500, lr=1e-3, weight_decay=1e-4, ks=None):
+def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500, lr=1e-3, weight_decay=1e-4, k_step_list=None):
     """
     function for training alignment parameters
     :param ref_vae: pre-trained vae
     :param align: align object
     :param train_dataloader: a dataloader object
+    :param k_step_list: list of length n_epochs for stochastic k_step loss
     """
     assert isinstance(train_dataloader, SeqDataLoader)
     assert train_dataloader.shuffle
-
-    if ks is None:
-        ks = torch.ones(n_epochs)
 
     training_losses = []
     opt = torch.optim.AdamW(params=align.parameters(),
@@ -52,7 +49,8 @@ def alignment_training(ref_vae, align, train_dataloader, beta=1.0, n_epochs=500,
 
     for i in tqdm(range(n_epochs)):
 
-        align.k_step = int(ks[i])
+        if k_step_list is not None:
+            align.k_step = int(k_step_list[i])
         for batch in train_dataloader:
             opt.zero_grad()
             loss = align(ref_vae, to_device(batch, ref_vae.device), beta=beta)

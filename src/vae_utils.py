@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
+from torch.distributions import Normal
 
-from utils import vectorize, tensorize
-from priors import *
+from src.utils import vectorize, tensorize
 
 
 def sample_k_step_ahead(prior, x, K, u=None, keep_trajectory=False):
@@ -65,7 +65,7 @@ def compute_k_step_log_q(x_samples, mu, var, k_step, method='k_step'):
 
 def compute_k_step_prior(x_samples, k_step, prior, method='k_step'):
     """
-    :param x_samples: samples from variational posterior of size B x T x dx + dx
+    :param x_samples: samples from variational posterior of size B x T x dx + du
     :param k_step: number of steps
     :param dx: latent dimension
     :param method: either 'k_step' or 'multi_step'; 'multi_step computes KL over all k steps'

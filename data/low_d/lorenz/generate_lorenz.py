@@ -1,8 +1,11 @@
+import sys
+sys.path.append('../')
+
 import numpy as np
 import numpy.random as npr
 import torch
 from tqdm import tqdm
-from ..utils import *
+from utils import *
 
 torch.manual_seed(42)
 torch.random.manual_seed(42)
@@ -30,7 +33,7 @@ dx = 3
 "different number of observations for sessions/animals"
 if noise_type == 'gaussian':
     dys = [40, 35, 55]
-elif noise_type == 'bernoulli' or noise_type == 'poisson':
+elif noise_type == 'binomial' or noise_type == 'poisson':
     dys = [250, 250, 200, 300]
 
 t_eval = np.arange(0, (T + n_init + 1) * dt, dt)

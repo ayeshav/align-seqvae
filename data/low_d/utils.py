@@ -51,7 +51,7 @@ def sim_lorenz(K, T, dt=1e-2, rho=28.0, sigma=10.0, beta=8.0/3.0):
     return x
 
 
-def get_observations(x, C, b, sigma_y, noise_type='bernoulli', norm_latent=False, N_max=4):
+def get_observations(x, C, b, sigma_y, noise_type='binomial', norm_latent=False, N_max=4):
     K, T, dx = x.shape
     dy = C.shape[1]
 
@@ -67,7 +67,7 @@ def get_observations(x, C, b, sigma_y, noise_type='bernoulli', norm_latent=False
     elif noise_type == 'poisson':
         log_rates = x @ C + b
         y = npr.poisson(softplus(log_rates))
-    elif noise_type == 'bernoulli':
+    elif noise_type == 'binomial':
         log_rates = x @ C + b
         y = npr.binomial(N_max, sigmoid(log_rates))
 
